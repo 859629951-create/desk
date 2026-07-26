@@ -1,0 +1,475 @@
+/* ============================================
+   今日有雨 · 基础视觉系统 v3
+   美学方向：森林墨绿 + 纯白 / 行书手写 / 思源宋体粗体
+   ============================================ */
+
+:root {
+  /* 纸张色系 → 纯白系 */
+  --paper: #f7f8f5;
+  --paper-deep: #eef0ea;
+  --paper-light: #fbfcfa;
+  --paper-card: #ffffff;
+  --paper-shadow: rgba(47, 74, 40, 0.08);
+
+  /* 墨色 */
+  --ink: #1f2a1c;
+  --ink-soft: #4a5848;
+  --ink-mute: #8a9588;
+  --ink-line: #d8ddd5;
+
+  /* 主色：森林墨绿 */
+  --forest: #2f4a28;
+  --forest-deep: #1f3520;
+  --forest-soft: #5a7a52;
+  --forest-mist: #e8efe4;
+  --forest-glow: #c5d5b9;
+
+  /* 辅助色 */
+  --gold: #b8923a;
+  --gold-soft: #f0e4c8;
+  --gold-deep: #8a6a1f;
+  --gold-light: #d4af5e;
+  --rust: #a05a3a;
+  --rust-soft: #e8d5c8;
+  --indigo: #3a4a5b;
+  --indigo-soft: #d5dde4;
+
+  /* 烫金质感渐变 */
+  --gold-foil: linear-gradient(
+    135deg,
+    #8a6a1f 0%,
+    #b8923a 20%,
+    #d4af5e 35%,
+    #f0e4c8 50%,
+    #d4af5e 65%,
+    #b8923a 80%,
+    #8a6a1f 100%
+  );
+  --gold-foil-shine: linear-gradient(
+    105deg,
+    transparent 30%,
+    rgba(255, 248, 220, 0.6) 45%,
+    rgba(255, 255, 255, 0.8) 50%,
+    rgba(255, 248, 220, 0.6) 55%,
+    transparent 70%
+  );
+  --gold-foil-text: linear-gradient(
+    135deg,
+    #8a6a1f 0%,
+    #b8923a 25%,
+    #e8c878 50%,
+    #b8923a 75%,
+    #8a6a1f 100%
+  );
+
+  /* 纸胶带色（调整为墨绿系） */
+  --tape-green: rgba(47, 74, 40, 0.18);
+  --tape-gold: rgba(184, 146, 58, 0.25);
+  --tape-rust: rgba(160, 90, 58, 0.2);
+  --tape-blue: rgba(58, 74, 91, 0.16);
+
+  --radius-sm: 8px;
+  --radius: 16px;
+  --radius-lg: 24px;
+
+  --font-display: 'Noto Serif SC', serif;
+  --font-body: 'Noto Serif SC', 'Songti SC', serif;
+  --font-hand: 'Long Cang', 'Noto Serif SC', cursive;
+  --font-num: 'DM Serif Display', 'Noto Serif SC', serif;
+  --font-display-weight: 700;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--paper);
+  line-height: 1.55;
+  font-size: 15px;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overscroll-behavior: none;
+}
+
+/* 纸张纹理背景 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(47, 74, 40, 0.04) 0, transparent 50%),
+    radial-gradient(circle at 85% 80%, rgba(184, 146, 58, 0.03) 0, transparent 50%),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 28px,
+      rgba(47, 74, 40, 0.025) 28px,
+      rgba(47, 74, 40, 0.025) 29px
+    );
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  outline: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+ul {
+  list-style: none;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+/* 显示字体统一加粗，呼应思源宋体粗体 */
+.app-title,
+.seal,
+.stamp,
+.module-head .mh-title,
+.section-title,
+.sheet-head .sh-title,
+.dash-card-lg .dc-lg-title,
+.dash-card .dc-title,
+.relic-card .rc-name,
+.acc-group .ag-title,
+.tl-era .tl-name,
+.chart-box .cb-title,
+.report-head .rh-title,
+.dash-quote {
+  font-weight: 700 !important;
+}
+
+/* ===== 通用组件 ===== */
+
+.tape {
+  position: absolute;
+  width: 70px;
+  height: 22px;
+  background: var(--tape-gold);
+  transform: rotate(-4deg);
+  opacity: 0.9;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  pointer-events: none;
+}
+.tape.green { background: var(--tape-green); }
+.tape.gold { background: var(--tape-gold); }
+.tape.rust { background: var(--tape-rust); }
+.tape.blue { background: var(--tape-blue); }
+
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--forest);
+  color: var(--forest);
+  font-family: var(--font-display);
+  padding: 3px 10px;
+  border-radius: 4px;
+  transform: rotate(-3deg);
+  font-size: 13px;
+  letter-spacing: 1px;
+  opacity: 0.85;
+}
+
+/* 烫金质感工具类 */
+.gold-foil {
+  background: var(--gold-foil);
+  background-size: 200% 200%;
+  position: relative;
+  overflow: hidden;
+}
+.gold-foil::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--gold-foil-shine);
+  background-size: 200% 100%;
+  pointer-events: none;
+  animation: foilShine 3s ease-in-out infinite;
+}
+@keyframes foilShine {
+  0%, 100% { background-position: -100% 0; }
+  50% { background-position: 100% 0; }
+}
+
+.gold-foil-text {
+  background: var(--gold-foil-text);
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: foilTextShine 4s ease-in-out infinite;
+}
+@keyframes foilTextShine {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+/* 主按钮：墨绿实色 */
+.btn-primary {
+  background: var(--forest);
+  color: var(--paper-light);
+  box-shadow: 0 3px 0 var(--forest-deep);
+}
+.btn-primary:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--forest-deep);
+}
+
+.btn-ghost {
+  background: var(--paper-card);
+  color: var(--ink);
+  border: 1.5px solid var(--ink-line);
+}
+.btn-ghost:active {
+  background: var(--paper-deep);
+}
+
+/* 次按钮：墨绿描边 */
+.btn-outline {
+  background: var(--paper-card);
+  color: var(--forest);
+  border: 1.5px solid var(--forest);
+}
+.btn-outline:active {
+  background: var(--forest-mist);
+}
+
+/* 保留 jade 别名兼容旧代码 */
+.btn-jade {
+  background: var(--forest-soft);
+  color: var(--paper-light);
+  box-shadow: 0 3px 0 var(--forest);
+}
+.btn-jade:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--forest);
+}
+
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper-card);
+  border: 1.5px solid var(--ink-line);
+  transition: all 0.2s;
+  font-size: 16px;
+}
+.icon-btn:active {
+  background: var(--forest-mist);
+  transform: scale(0.94);
+}
+
+/* 输入控件 */
+.field {
+  width: 100%;
+  padding: 11px 14px;
+  background: var(--paper-light);
+  border: 1.5px solid var(--ink-line);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--ink);
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+.field:focus {
+  border-color: var(--forest);
+  background: var(--paper-card);
+  box-shadow: 0 0 0 3px var(--forest-mist);
+}
+textarea.field {
+  resize: none;
+  min-height: 70px;
+  line-height: 1.6;
+}
+input[type="date"].field,
+input[type="time"].field,
+input[type="datetime-local"].field {
+  min-width: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+input[type="date"].field::-webkit-inner-spin-button,
+input[type="date"].field::-webkit-calendar-picker-indicator {
+  display: block;
+  opacity: 0.5;
+}
+
+.label {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-mute);
+  margin-bottom: 5px;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+/* 卡片 */
+.card {
+  background: var(--paper-card);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 10px var(--paper-shadow);
+  border: 1px solid var(--ink-line);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 空状态 */
+.empty {
+  text-align: center;
+  padding: 50px 20px;
+  color: var(--ink-mute);
+}
+.empty .emoji {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.4;
+}
+.empty .hint {
+  font-size: 13px;
+  font-family: var(--font-hand);
+}
+
+/* 标签 */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--paper-deep);
+  color: var(--ink-soft);
+}
+.chip.green { background: var(--forest-mist); color: var(--forest); }
+.chip.red { background: var(--rust-soft); color: var(--rust); }
+.chip.yellow { background: var(--gold-soft); color: var(--gold); }
+.chip.blue { background: var(--indigo-soft); color: var(--indigo); }
+
+/* 加载动画 */
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--ink-line);
+  border-top-color: var(--forest);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 滚动条隐藏 */
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* 动画 */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fade-up {
+  animation: fadeUp 0.35s ease both;
+}
+
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  60% {
+    transform: scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.pop-in {
+  animation: popIn 0.3s ease both;
+}
+
+/* 仪表盘卡片专用 */
+.dash-overview {
+  background: var(--paper-card);
+  border-radius: var(--radius);
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 2px 12px var(--paper-shadow);
+  border: 1px solid var(--ink-line);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.dash-overview:active {
+  transform: scale(0.98);
+}
+.dash-overview::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--forest);
+}
+.dash-overview.accent-gold::before { background: var(--gold); }
+.dash-overview.accent-rust::before { background: var(--rust); }
+.dash-overview.accent-blue::before { background: var(--indigo); }

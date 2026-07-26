@@ -1,0 +1,158 @@
+/* ============================================
+   设置模块
+   - AI 配置（在线/离线）
+   - PWA 安装指引
+   - 数据管理（导出/导入/清空）
+   ============================================ */
+
+router.register('settings', () => {
+  App.setActiveNav('more');
+  App.setFab(null);
+  const main = document.getElementById('appMain');
+
+  const cfg = AI.config;
+
+  main.innerHTML = `
+    <div class="fade-up">
+      <div class="section-title">📱 添加到手机桌面</div>
+      <div class="card" style="padding:14px;">
+        <div style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin-bottom:10px;">
+          把「今日有雨」添加到手机桌面，像 App 一样全屏使用，离线也能访问。
+        </div>
+        <button class="btn btn-primary" id="installBtn" style="width:100%;">📱 添加到桌面</button>
+      </div>
+
+      <div class="section-title">🤖 AI 助手配置</div>
+      <div class="card" style="padding:14px;">
+        <div class="form-row">
+          <label class="label">AI 模式</label>
+          <div class="choice-grid">
+            <button class="choice ${cfg.provider === 'local' ? 'active' : ''}" data-prov="local">📋 离线模式</button>
+            <button class="choice ${cfg.provider === 'online' ? 'active' : ''}" data-prov="online">🌐 在线模式</button>
+          </div>
+          <div style="font-size:11px;color:var(--ink-mute);margin-top:6px;">
+            离线模式：使用本地规则，无需联网，功能有限<br>
+            在线模式：接入大模型 API，支持文物识别、菜谱提取、智能辅导
+          </div>
+        </div>
+        <div id="onlineConfig" style="${cfg.provider === 'online' ? '' : 'display:none;'}">
+          <div class="form-row">
+            <label class="label">API Key</label>
+            <input class="field" id="ai_key" type="password" value="${cfg.apiKey}" placeholder="输入 API Key">
+          </div>
+          <div class="form-row">
+            <label class="label">API 地址（可选）</label>
+            <input class="field" id="ai_ep" value="${cfg.endpoint}" placeholder="https://api.example.com/v1/chat">
+          </div>
+          <button class="btn btn-jade" id="ai_save" style="width:100%;">保存 AI 配置</button>
+        </div>
+      </div>
+
+      <div class="section-title">🔔 每日提醒</div>
+      <div id="notifySettings"></div>
+
+      <div class="section-title">💾 数据管理</div>
+      <div class="card" style="padding:14px;">
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button class="btn btn-ghost" id="exportBtn" style="width:100%;">📤 导出全部数据</button>
+          <button class="btn btn-ghost" id="importBtn" style="width:100%;">📥 导入数据</button>
+          <button class="btn btn-ghost" id="clearBtn" style="width:100%;color:var(--cinnabar);">🗑 清空所有数据</button>
+        </div>
+        <div style="font-size:11px;color:var(--ink-mute);margin-top:10px;line-height:1.5;">
+          数据存储在你的设备本地，不会上传服务器。建议定期导出备份。
+        </div>
+      </div>
+
+      <div class="section-title">ℹ️ 关于</div>
+      <div class="card" style="padding:14px;text-align:center;">
+        <div style="font-family:var(--font-display);font-size:20px;color:var(--forest);">今日有雨</div>
+        <div style="font-size:12px;color:var(--ink-mute);margin-top:4px;">v1.0 · 一个温暖的生活记录工作台</div>
+        <div style="font-family:var(--font-hand);font-size:13px;color:var(--ink-soft);margin-top:10px;">"记录每一个想被珍藏的日子"</div>
+      </div>
+
+      <div style="height:30px"></div>
+    </div>
+  `;
+
+  main.querySelector('#installBtn').onclick = () => {
+    if (App.deferredPrompt) {
+      App.deferredPrompt.prompt();
+    } else {
+      UI.showInstallGuide();
+    }
+  };
+
+  // 渲染提醒设置
+  Notify.renderSettings(main.querySelector('#notifySettings'));
+
+  main.querySelectorAll('[data-prov]').forEach((b) => {
+    b.onclick = () => {
+      main.querySelectorAll('[data-prov]').forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      const prov = b.dataset.prov;
+      AI.saveConfig({ provider: prov });
+      main.querySelector('#onlineConfig').style.display = prov === 'online' ? '' : 'none';
+      UI.toast(prov === 'online' ? '已切换为在线模式' : '已切换为离线模式');
+    };
+  });
+
+  main.querySelector('#ai_save').onclick = () => {
+    AI.saveConfig({
+      apiKey: main.querySelector('#ai_key').value.trim(),
+      endpoint: main.querySelector('#ai_ep').value.trim()
+    });
+    UI.toast('AI 配置已保存');
+  };
+
+  main.querySelector('#exportBtn').onclick = async () => {
+    const data = {};
+    for (const k in db.STORES) {
+      data[k] = await db.all(db.STORES[k]);
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `今日有雨_备份_${UI.todayStr()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    UI.toast('已导出备份文件');
+  };
+
+  main.querySelector('#importBtn').onclick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    input.onchange = async () => {
+      const f = input.files[0];
+      if (!f) return;
+      try {
+        const text = await f.text();
+        const data = JSON.parse(text);
+        if (await UI.confirm('导入将覆盖现有数据，确定继续？')) {
+          for (const k in db.STORES) {
+            await db.clear(db.STORES[k]);
+            if (data[k]) {
+              for (const item of data[k]) await db.put(db.STORES[k], item);
+            }
+          }
+          UI.toast('导入成功');
+          router.navigate('home');
+        }
+      } catch (e) {
+        UI.toast('导入失败：文件格式错误');
+      }
+    };
+    input.click();
+  };
+
+  main.querySelector('#clearBtn').onclick = async () => {
+    if (await UI.confirm('确定清空所有数据？此操作不可恢复！')) {
+      if (await UI.confirm('再次确认：所有学习、菜谱、文物、记账等数据将全部删除！')) {
+        for (const k in db.STORES) await db.clear(db.STORES[k]);
+        UI.toast('已清空所有数据');
+        router.navigate('home');
+      }
+    }
+  };
+});
