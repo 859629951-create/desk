@@ -117,13 +117,12 @@ const Study = {
       </div>
     `;
 
-    App.setFab(() => this.edit());
+    let currentFilter = 'all';
+    App.setFab(() => this.edit(null, currentFilter));
 
     // 渲染总 streak 概览
     this.renderOverview();
 
-    // 标签筛选
-    let currentFilter = 'all';
     const renderList = async () => {
       let all = await db.all(db.STORES.study);
       if (currentFilter !== 'all') all = all.filter((s) => s.subject === currentFilter);
@@ -137,16 +136,20 @@ const Study = {
       el.innerHTML = all
         .map((s) => {
           const streak = this.calcStreak(s.checkins);
+          const checkedThisPeriod = this.isCheckedToday(s.checkins, s.frequency);
+          const completed = this.isCompleted(s);
+          const freqLabel = this.getFrequencyLabel(s.frequency);
           return `
         <div class="list-item" data-id="${s.id}">
           <div class="li-row">
-            <button class="check ${s.done ? 'done' : ''}" data-act="toggle">✓</button>
+            <button class="check ${completed ? 'done' : ''}" data-act="toggle">✓</button>
             <div style="flex:1" data-act="open">
-              <div class="li-title" style="${s.done ? 'text-decoration: line-through; color: var(--ink-mute);' : ''}">${s.title}</div>
+              <div class="li-title" style="${completed ? 'text-decoration: line-through; color: var(--ink-mute);' : ''}">${s.title}</div>
               ${s.note ? `<div class="li-sub">${s.note}</div>` : ''}
               <div class="li-tags">
                 <span class="chip red">${s.subject}</span>
-                ${s.checkins?.length ? `<span class="chip green">📅 打卡 ${s.checkins.length} 天</span>` : ''}
+                <span class="chip ${checkedThisPeriod ? 'green' : 'gray'}">${freqLabel}${checkedThisPeriod ? ' ✓' : ''}</span>
+                ${s.checkins?.length ? `<span class="chip green">📅 打卡 ${s.checkins.length} 次</span>` : ''}
                 ${streak > 0 ? `<span class="chip yellow">🔥 连续 ${streak} 天</span>` : ''}
                 ${s.materials?.length ? `<span class="chip blue">📎 资料 ${s.materials.length}</span>` : ''}
               </div>
@@ -290,7 +293,16 @@ const Study = {
 
   async toggleDone(id) {
     const s = await db.get(db.STORES.study, id);
+    const wasDone = this.isCompleted(s);
     s.done = !s.done;
+    // 一次性任务：标记完成时自动补一条今日打卡，便于统计
+    if (s.done && !wasDone && s.frequency?.type === 'once') {
+      s.checkins = s.checkins || [];
+      const today = UI.todayStr();
+      if (!s.checkins.some((c) => c.date === today)) {
+        s.checkins.push({ date: today, duration: '', mood: '😊 充实', note: '一次性任务完成' });
+      }
+    }
     await db.put(db.STORES.study, s);
     this.list();
   },
@@ -327,10 +339,60 @@ const Study = {
     });
   },
 
-  edit(id) {
+  /* 频次类型定义 */
+  frequencyTypes: [
+    { value: 'once', label: '📌 一次性', desc: '完成即结束' },
+    { value: 'daily', label: '📅 每日', desc: '每天打卡' },
+    { value: 'weekly', label: '📆 每周', desc: '每周打卡' },
+    { value: 'custom', label: '⚙️ 自定义', desc: '自定义天数循环' }
+  ],
+
+  getFrequencyLabel(freq) {
+    if (!freq || freq.type === 'daily') return '📅 每日';
+    if (freq.type === 'once') return '📌 一次性';
+    if (freq.type === 'weekly') return '📆 每周';
+    if (freq.type === 'custom') return `⚙️ 每${freq.days || 1}天`;
+    return '📅 每日';
+  },
+
+  /* 根据频次判断今日是否已打卡 */
+  isCheckedToday(checkins, freq) {
+    const today = UI.todayStr();
+    if (!freq || freq.type === 'daily' || freq.type === 'once') {
+      return checkins?.some((c) => c.date === today);
+    }
+    if (freq.type === 'weekly') {
+      // 本周内是否打过卡（周一为起始）
+      const now = new Date();
+      const dayOfWeek = now.getDay() === 0 ? 6 : now.getDay() - 1;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - dayOfWeek);
+      const mondayStr = UI.formatDate(monday.getTime());
+      return checkins?.some((c) => c.date >= mondayStr && c.date <= today);
+    }
+    if (freq.type === 'custom') {
+      const days = freq.days || 1;
+      // 检查最近 days 天内是否有打卡
+      const checkDate = new Date();
+      checkDate.setDate(checkDate.getDate() - days + 1);
+      const checkStr = UI.formatDate(checkDate.getTime());
+      return checkins?.some((c) => c.date >= checkStr && c.date <= today);
+    }
+    return false;
+  },
+
+  /* 判断一次性任务是否已完成 */
+  isCompleted(s) {
+    if (s.done) return true;
+    if (s.frequency?.type === 'once' && s.checkins?.length > 0) return true;
+    return false;
+  },
+
+  edit(id, defaultSubject) {
     const isEdit = !!id;
     this.loadSubjects();
-    const data = isEdit ? null : { title: '', subject: this.subjects[0] || '其他', note: '', goal: '', materials: [] };
+    const initSubject = defaultSubject && defaultSubject !== 'all' ? defaultSubject : (this.subjects[0] || '其他');
+    const data = isEdit ? null : { title: '', subject: initSubject, note: '', goal: '', materials: [], frequency: { type: 'daily' } };
 
     const body = `
       <div class="form-row">
@@ -349,6 +411,16 @@ const Study = {
           <label class="label">每日目标</label>
           <input class="field" id="f_goal" placeholder="如：30 分钟" maxlength="20">
         </div>
+      </div>
+      <div class="form-row">
+        <label class="label">打卡频次</label>
+        <select class="field" id="f_freq">
+          ${this.frequencyTypes.map((f) => `<option value="${f.value}">${f.label}（${f.desc}）</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-row" id="freqDaysRow" style="display:none;">
+        <label class="label">每几天打卡一次</label>
+        <input class="field" id="f_freqdays" type="number" min="2" max="30" value="3">
       </div>
       <div class="form-row">
         <label class="label">备注</label>
@@ -376,9 +448,23 @@ const Study = {
         root.querySelector('#f_subject').value = s.subject || this.subjects[0];
         root.querySelector('#f_goal').value = s.goal || '';
         root.querySelector('#f_note').value = s.note || '';
+        const freqType = s.frequency?.type || 'daily';
+        root.querySelector('#f_freq').value = freqType;
+        if (freqType === 'custom') {
+          root.querySelector('#freqDaysRow').style.display = '';
+          root.querySelector('#f_freqdays').value = s.frequency?.days || 3;
+        }
         materials = [...(s.materials || [])];
         renderMats();
+      } else {
+        root.querySelector('#f_subject').value = initSubject;
       }
+
+      // 频次切换：自定义显示天数输入
+      root.querySelector('#f_freq').onchange = (e) => {
+        const daysRow = root.querySelector('#freqDaysRow');
+        daysRow.style.display = e.target.value === 'custom' ? '' : 'none';
+      };
 
       // 学科下拉：选择「新增学科」时弹出输入框
       root.querySelector('#f_subject').onchange = (e) => {
@@ -431,12 +517,18 @@ const Study = {
           UI.toast('请输入任务标题');
           return;
         }
+        const freqType = root.querySelector('#f_freq').value;
+        const frequency = { type: freqType };
+        if (freqType === 'custom') {
+          frequency.days = parseInt(root.querySelector('#f_freqdays').value) || 3;
+        }
         const payload = {
           title,
           subject: root.querySelector('#f_subject').value,
           goal: root.querySelector('#f_goal').value.trim(),
           note: root.querySelector('#f_note').value.trim(),
-          materials
+          materials,
+          frequency
         };
         if (isEdit) {
           Object.assign(data, payload);
@@ -461,29 +553,48 @@ const Study = {
     if (!s) return router.navigate('study');
 
     const main = document.getElementById('appMain');
-    App.setFab(() => this.checkin(id));
+    const checkedThisPeriodPre = this.isCheckedToday(s.checkins, s.frequency);
+    const completedPre = this.isCompleted(s);
+    const canCheckin = !completedPre || s.frequency?.type !== 'once';
+    App.setFab(canCheckin && !checkedThisPeriodPre ? () => this.checkin(id) : null);
 
     const today = UI.todayStr();
-    const checkedToday = s.checkins?.some((c) => c.date === today);
+    const checkedThisPeriod = this.isCheckedToday(s.checkins, s.frequency);
+    const completed = this.isCompleted(s);
     const streak = this.calcStreak(s.checkins);
     const maxStreak = this.calcMaxStreak(s.checkins);
     const unlocked = this.unlockedBadges(streak, maxStreak);
+    const freqLabel = this.getFrequencyLabel(s.frequency);
+
+    // 根据频次与状态生成打卡按钮文案
+    let checkinBtnText;
+    let checkinBtnDisabled = false;
+    if (completed && s.frequency?.type === 'once') {
+      checkinBtnText = '✓ 已完成（一次性任务）';
+      checkinBtnDisabled = true;
+    } else if (checkedThisPeriod) {
+      checkinBtnText = `✓ 本周期已打卡`;
+      checkinBtnDisabled = true;
+    } else {
+      checkinBtnText = `📅 立即打卡（${freqLabel}）`;
+    }
 
     main.innerHTML = `
       <div class="fade-up">
         <button class="detail-back" data-act="back">‹ 返回</button>
         <div class="card" style="padding: 16px; margin-bottom: 14px;">
           <div class="tape green" style="top:-8px;left:20px;"></div>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
             <span class="chip red">${s.subject}</span>
-            ${s.done ? '<span class="chip green">已完成</span>' : ''}
-            ${checkedToday ? '<span class="chip yellow">今日已打卡</span>' : ''}
+            <span class="chip ${checkedThisPeriod ? 'green' : 'gray'}">${freqLabel}</span>
+            ${completed ? '<span class="chip green">已完成</span>' : ''}
+            ${checkedThisPeriod ? '<span class="chip yellow">本周期已打卡</span>' : ''}
           </div>
           <h2 style="font-family:var(--font-display);font-size:22px;color:var(--ink);margin-bottom:6px">${s.title}</h2>
           ${s.goal ? `<div style="font-size:13px;color:var(--ink-soft)">🎯 每日目标：${s.goal}</div>` : ''}
           ${s.note ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:8px;line-height:1.6">${s.note}</div>` : ''}
           <div style="display:flex;gap:8px;margin-top:14px;">
-            <button class="btn btn-primary" id="btnCheckin" style="flex:1">📅 ${checkedToday ? '今日已打卡' : '今日打卡'}</button>
+            <button class="btn btn-primary" id="btnCheckin" style="flex:1${checkinBtnDisabled ? ';opacity:0.6' : ''}" ${checkinBtnDisabled ? 'disabled' : ''}>${checkinBtnText}</button>
             <button class="btn btn-jade" id="btnAi" style="flex:1">🤖 AI 辅导</button>
           </div>
         </div>
@@ -549,7 +660,10 @@ const Study = {
     `;
 
     main.querySelector('[data-act="back"]').onclick = () => router.navigate('study');
-    main.querySelector('#btnCheckin').onclick = () => this.checkin(id);
+    const btnCheckin = main.querySelector('#btnCheckin');
+    if (!checkinBtnDisabled) {
+      btnCheckin.onclick = () => this.checkin(id);
+    }
     main.querySelector('#btnAi').onclick = () => this.aiHelp(id);
 
     // AI 工具箱
@@ -665,16 +779,28 @@ const Study = {
 
   async checkin(id) {
     const s = await db.get(db.STORES.study, id);
-    const today = UI.todayStr();
-    if (s.checkins?.some((c) => c.date === today)) {
-      UI.toast('今天已经打过卡啦');
+
+    // 一次性任务且已完成，不允许再打卡
+    if (this.isCompleted(s) && s.frequency?.type === 'once') {
+      UI.toast('该任务已完成（一次性），无需再打卡');
       return;
     }
+
+    // 根据频次判断本周期是否已打卡
+    if (this.isCheckedToday(s.checkins, s.frequency)) {
+      const freqLabel = this.getFrequencyLabel(s.frequency);
+      UI.toast(`本周期（${freqLabel}）已打卡，勿重复`);
+      return;
+    }
+
+    const today = UI.todayStr();
+    const freqLabel = this.getFrequencyLabel(s.frequency);
     const body = `
       <div style="text-align:center;margin-bottom:14px">
         <div style="font-size:40px">🎉</div>
         <div style="font-family:var(--font-display);font-size:18px;color:var(--ink);margin-top:6px">${today} 打卡</div>
         <div style="font-size:12px;color:var(--ink-mute);margin-top:2px">${s.title}</div>
+        <div style="font-size:11px;color:var(--forest);margin-top:4px">频次：${freqLabel}</div>
       </div>
       <div class="form-row-2">
         <div>

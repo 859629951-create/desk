@@ -289,7 +289,11 @@ const Recipe = {
           .filter((s) => s.length > 5 && !/^[原料|材料|食材]/.test(s))
           .slice(0, 10);
         const hint = await AI.generate('请帮我整理这道菜谱的原料清单和做法步骤', text);
-        extractedIngredients = ings.map((n) => ({ name: n, have: false }));
+        // extractIngredients 已返回 {name, have} 对象数组，直接使用即可
+        extractedIngredients = ings.map((n) => {
+          if (typeof n === 'string') return { name: n, have: false };
+          return { name: n.name || String(n), have: n.have || false };
+        });
         extractedSteps = steps;
         renderExtracted();
         out.innerHTML += `<div class="ai-bubble" style="margin-top:8px">${hint.replace(/\n/g, '<br>')}</div>`;

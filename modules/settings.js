@@ -37,14 +37,29 @@ router.register('settings', () => {
         </div>
         <div id="onlineConfig" style="${cfg.provider === 'online' ? '' : 'display:none;'}">
           <div class="form-row">
+            <label class="label">服务商预设</label>
+            <div class="choice-grid">
+              <button class="choice ${cfg.preset === 'deepseek' ? 'active' : ''}" data-preset="deepseek">🔮 DeepSeek</button>
+            </div>
+            <div style="font-size:11px;color:var(--ink-mute);margin-top:6px;">
+              已预置 DeepSeek 配置，开箱即用。
+            </div>
+          </div>
+          <div class="form-row">
             <label class="label">API Key</label>
             <input class="field" id="ai_key" type="password" value="${cfg.apiKey}" placeholder="输入 API Key">
           </div>
           <div class="form-row">
+            <label class="label">模型名称</label>
+            <input class="field" id="ai_model" value="${cfg.model || 'deepseek-chat'}" placeholder="deepseek-chat">
+          </div>
+          <div class="form-row">
             <label class="label">API 地址（可选）</label>
-            <input class="field" id="ai_ep" value="${cfg.endpoint}" placeholder="https://api.example.com/v1/chat">
+            <input class="field" id="ai_ep" value="${cfg.endpoint}" placeholder="https://api.deepseek.com/v1/chat/completions">
           </div>
           <button class="btn btn-jade" id="ai_save" style="width:100%;">保存 AI 配置</button>
+          <button class="btn btn-ghost" id="ai_test" style="width:100%;margin-top:8px;">🧪 测试连接</button>
+          <div id="ai_test_result" style="font-size:12px;margin-top:8px;"></div>
         </div>
       </div>
 
@@ -96,12 +111,47 @@ router.register('settings', () => {
     };
   });
 
+  // 服务商预设切换
+  main.querySelectorAll('[data-preset]').forEach((b) => {
+    b.onclick = () => {
+      main.querySelectorAll('[data-preset]').forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      const presetKey = b.dataset.preset;
+      AI.applyPreset(presetKey);
+      const preset = AI.presets[presetKey];
+      if (preset) {
+        main.querySelector('#ai_model').value = preset.model;
+        main.querySelector('#ai_ep').value = preset.endpoint;
+      }
+      UI.toast(`已切换为 ${AI.presets[presetKey]?.label || presetKey} 预设`);
+    };
+  });
+
   main.querySelector('#ai_save').onclick = () => {
     AI.saveConfig({
       apiKey: main.querySelector('#ai_key').value.trim(),
+      model: main.querySelector('#ai_model').value.trim(),
       endpoint: main.querySelector('#ai_ep').value.trim()
     });
     UI.toast('AI 配置已保存');
+  };
+
+  // 测试连接
+  main.querySelector('#ai_test').onclick = async () => {
+    const resultEl = main.querySelector('#ai_test_result');
+    // 先保存当前输入的配置再测试
+    AI.saveConfig({
+      apiKey: main.querySelector('#ai_key').value.trim(),
+      model: main.querySelector('#ai_model').value.trim(),
+      endpoint: main.querySelector('#ai_ep').value.trim()
+    });
+    resultEl.innerHTML = '<span style="color:var(--ink-mute)">⏳ 正在测试连接...</span>';
+    try {
+      const reply = await AI.generate('请回复"连接成功"四个字。', '');
+      resultEl.innerHTML = `<span style="color:var(--forest)">✓ 连接成功</span><br><span style="color:var(--ink-soft)">${reply.slice(0, 80)}</span>`;
+    } catch (e) {
+      resultEl.innerHTML = `<span style="color:var(--cinnabar)">✗ 连接失败</span><br><span style="color:var(--ink-soft)">${e.message.slice(0, 120)}</span>`;
+    }
   };
 
   main.querySelector('#exportBtn').onclick = async () => {

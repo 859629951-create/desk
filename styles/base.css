@@ -393,6 +393,7 @@ input[type="date"].field::-webkit-calendar-picker-indicator {
 .chip.red { background: var(--rust-soft); color: var(--rust); }
 .chip.yellow { background: var(--gold-soft); color: var(--gold); }
 .chip.blue { background: var(--indigo-soft); color: var(--indigo); }
+.chip.gray { background: var(--paper-deep); color: var(--ink-mute); }
 
 /* 加载动画 */
 .spinner {

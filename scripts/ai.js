@@ -5,22 +5,57 @@
    ============================================ */
 
 const AI = {
+  /* DeepSeek 预设配置 */
+  presets: {
+    deepseek: {
+      label: 'DeepSeek',
+      endpoint: 'https://api.deepseek.com/v1/chat/completions',
+      model: 'deepseek-chat',
+      visionModel: 'deepseek-chat'
+    }
+  },
+
   config: {
-    provider: 'local', // 'local' | 'online'
-    apiKey: '',
-    endpoint: ''
+    provider: 'online', // 默认启用在线模式（已预置 DeepSeek）
+    apiKey: 'sk-d253396e05d34dc098d272d27c807398',
+    endpoint: 'https://api.deepseek.com/v1/chat/completions',
+    model: 'deepseek-chat',
+    visionModel: 'deepseek-chat',
+    preset: 'deepseek'
   },
 
   async loadConfig() {
     try {
       const raw = localStorage.getItem('aiConfig');
-      if (raw) this.config = { ...this.config, ...JSON.parse(raw) };
+      if (raw) {
+        const saved = JSON.parse(raw);
+        // 合并保存的配置，但保留预设的默认值兜底
+        this.config = { ...this.config, ...saved };
+        // 若保存的 apiKey 为空，回退到内置 DeepSeek key
+        if (!this.config.apiKey) {
+          this.config.apiKey = 'sk-d253396e05d34dc098d272d27c807398';
+          this.config.endpoint = 'https://api.deepseek.com/v1/chat/completions';
+          this.config.model = 'deepseek-chat';
+        }
+      }
     } catch (e) {}
   },
 
   saveConfig(cfg) {
     this.config = { ...this.config, ...cfg };
     localStorage.setItem('aiConfig', JSON.stringify(this.config));
+  },
+
+  /* 切换预设提供商 */
+  applyPreset(presetKey) {
+    const preset = this.presets[presetKey];
+    if (!preset) return;
+    this.saveConfig({
+      preset: presetKey,
+      endpoint: preset.endpoint,
+      model: preset.model,
+      visionModel: preset.visionModel
+    });
   },
 
   /* 通用文本生成 */
@@ -36,19 +71,26 @@ const AI = {
   },
 
   async _callOnline(prompt, context) {
-    const res = await fetch(this.config.endpoint || 'https://api.example.com/v1/chat', {
+    const res = await fetch(this.config.endpoint || 'https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.config.apiKey}`
       },
       body: JSON.stringify({
+        model: this.config.model || 'deepseek-chat',
         messages: [
-          { role: 'system', content: '你是一个贴心的生活助手，用简洁的中文回答。' },
+          { role: 'system', content: '你是一个贴心的生活助手，用简洁的中文回答。若用户要求返回 JSON，请只输出纯 JSON，不要包含 markdown 代码块标记。' },
           { role: 'user', content: context ? `${context}\n\n${prompt}` : prompt }
-        ]
+        ],
+        temperature: 0.7,
+        stream: false
       })
     });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`API ${res.status}: ${errText.slice(0, 200)}`);
+    }
     const data = await res.json();
     return data.choices?.[0]?.message?.content || '';
   },
@@ -141,7 +183,8 @@ ${text}`;
     if (this.config.provider === 'online' && this.config.apiKey) {
       try {
         const resp = await this._callOnline(prompt, '');
-        const match = resp.match(/\{[\s\S]*\}/);
+        const cleaned = this._stripCodeFence(resp);
+        const match = cleaned.match(/\{[\s\S]*\}/);
         if (match) return JSON.parse(match[0]);
       } catch (e) {}
     }
@@ -203,7 +246,8 @@ ${text}`;
     if (this.config.provider === 'online' && this.config.apiKey) {
       try {
         const resp = await this._callOnline(prompt, '');
-        const match = resp.match(/\{[\s\S]*\}/);
+        const cleaned = this._stripCodeFence(resp);
+        const match = cleaned.match(/\{[\s\S]*\}/);
         if (match) return JSON.parse(match[0]);
       } catch (e) {}
     }
@@ -216,14 +260,14 @@ ${text}`;
   },
 
   async _callVision(imageDataUrl, museumName) {
-    const res = await fetch(this.config.endpoint || 'https://api.example.com/v1/chat', {
+    const res = await fetch(this.config.endpoint || 'https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.config.apiKey}`
       },
       body: JSON.stringify({
-        model: 'vision',
+        model: this.config.visionModel || this.config.model || 'deepseek-chat',
         messages: [
           {
             role: 'user',
@@ -235,13 +279,23 @@ ${text}`;
         ]
       })
     });
+    if (!res.ok) {
+      throw new Error(`Vision API ${res.status}`);
+    }
     const data = await res.json();
     const content = data.choices?.[0]?.message?.content || '';
     try {
-      const match = content.match(/\{[\s\S]*\}/);
+      const cleaned = this._stripCodeFence(content);
+      const match = cleaned.match(/\{[\s\S]*\}/);
       if (match) return JSON.parse(match[0]);
     } catch (e) {}
     return { name: '未识别', desc: content };
+  },
+
+  /* 去除 AI 返回中的 markdown 代码块标记 ```json ... ``` */
+  _stripCodeFence(text) {
+    if (!text) return text;
+    return text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
   },
 
   /* ============================================
@@ -263,7 +317,8 @@ ${text}`;
     if (this.config.provider === 'online' && this.config.apiKey) {
       try {
         const text = await this._callOnline(prompt, '');
-        const match = text.match(/\[[\s\S]*\]/);
+        const cleaned = this._stripCodeFence(text);
+        const match = cleaned.match(/\[[\s\S]*\]/);
         if (match) return JSON.parse(match[0]);
       } catch (e) {}
     }
@@ -334,7 +389,8 @@ ${text}`;
     if (this.config.provider === 'online' && this.config.apiKey) {
       try {
         const text = await this._callOnline(prompt, '');
-        const match = text.match(/\[[\s\S]*\]/);
+        const cleaned = this._stripCodeFence(text);
+        const match = cleaned.match(/\[[\s\S]*\]/);
         if (match) return JSON.parse(match[0]);
       } catch (e) {}
     }
@@ -402,7 +458,8 @@ ${text}`;
     if (this.config.provider === 'online' && this.config.apiKey) {
       try {
         const text = await this._callOnline(prompt, '');
-        const match = text.match(/\{[\s\S]*\}/);
+        const cleaned = this._stripCodeFence(text);
+        const match = cleaned.match(/\{[\s\S]*\}/);
         if (match) return JSON.parse(match[0]);
       } catch (e) {}
     }
