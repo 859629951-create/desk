@@ -392,7 +392,7 @@ const Study = {
     const isEdit = !!id;
     this.loadSubjects();
     const initSubject = defaultSubject && defaultSubject !== 'all' ? defaultSubject : (this.subjects[0] || '其他');
-    const data = isEdit ? null : { title: '', subject: initSubject, note: '', goal: '', materials: [], frequency: { type: 'daily' } };
+    const data = isEdit ? {} : { title: '', subject: initSubject, note: '', goal: '', materials: [], frequency: { type: 'daily' } };
 
     const body = `
       <div class="form-row">
@@ -439,27 +439,11 @@ const Study = {
       </div>
     `;
 
-    UI.showSheet(isEdit ? '编辑学习任务' : '新建学习任务', body, async (root) => {
+    UI.showSheet(isEdit ? '编辑学习任务' : '新建学习任务', body, (root) => {
       let materials = [];
-      if (isEdit) {
-        const s = await db.get(db.STORES.study, id);
-        Object.assign(data, s);
-        root.querySelector('#f_title').value = s.title || '';
-        root.querySelector('#f_subject').value = s.subject || this.subjects[0];
-        root.querySelector('#f_goal').value = s.goal || '';
-        root.querySelector('#f_note').value = s.note || '';
-        const freqType = s.frequency?.type || 'daily';
-        root.querySelector('#f_freq').value = freqType;
-        if (freqType === 'custom') {
-          root.querySelector('#freqDaysRow').style.display = '';
-          root.querySelector('#f_freqdays').value = s.frequency?.days || 3;
-        }
-        materials = [...(s.materials || [])];
-        renderMats();
-      } else {
-        root.querySelector('#f_subject').value = initSubject;
-      }
+      let loaded = false; // 编辑模式下：是否已成功加载旧数据
 
+      // ===== 1. 先同步绑定所有事件，保证按钮始终可用 =====
       // 频次切换：自定义显示天数输入
       root.querySelector('#f_freq').onchange = (e) => {
         const daysRow = root.querySelector('#freqDaysRow');
@@ -485,33 +469,12 @@ const Study = {
         }
       };
 
-      function renderMats() {
-        const grid = root.querySelector('#matGrid');
-        const addBtn = '<div class="upload-trigger" id="matAdd">＋<span>上传资料</span></div>';
-        grid.innerHTML =
-          materials
-            .map(
-              (m, i) => `
-          <div class="img-cell">
-            <img src="${m}" alt="资料">
-            <button class="del" data-i="${i}">✕</button>
-          </div>`
-            )
-            .join('') + addBtn;
-        grid.querySelectorAll('.del').forEach((d) => {
-          d.onclick = () => {
-            materials.splice(+d.dataset.i, 1);
-            renderMats();
-          };
-        });
-        root.querySelector('#matAdd').onclick = async () => {
-          const imgs = await UI.pickImages(9);
-          materials.push(...imgs);
-          renderMats();
-        };
-      }
-
+      // 保存按钮：编辑模式下若未加载到数据则提示
       root.querySelector('#f_save').onclick = async () => {
+        if (isEdit && !loaded) {
+          UI.toast('数据加载中，请稍候');
+          return;
+        }
         const title = root.querySelector('#f_title').value.trim();
         if (!title) {
           UI.toast('请输入任务标题');
@@ -541,9 +504,78 @@ const Study = {
         this.list();
       };
 
-      if (isEdit) {
-        root.querySelector('#f_cancel').onclick = () => UI.hideSheet();
+      // 取消按钮（仅编辑模式存在）
+      const cancelBtn = root.querySelector('#f_cancel');
+      if (cancelBtn) {
+        cancelBtn.onclick = () => UI.hideSheet();
       }
+
+      // 资料网格渲染：先定义，后调用
+      function renderMats() {
+        const grid = root.querySelector('#matGrid');
+        const addBtn = '<div class="upload-trigger" id="matAdd">＋<span>上传资料</span></div>';
+        grid.innerHTML =
+          materials
+            .map(
+              (m, i) => `
+          <div class="img-cell">
+            <img src="${m}" alt="资料">
+            <button class="del" data-i="${i}">✕</button>
+          </div>`
+            )
+            .join('') + addBtn;
+        grid.querySelectorAll('.del').forEach((d) => {
+          d.onclick = () => {
+            materials.splice(+d.dataset.i, 1);
+            renderMats();
+          };
+        });
+        const addEl = root.querySelector('#matAdd');
+        if (addEl) {
+          addEl.onclick = async () => {
+            const imgs = await UI.pickImages(9);
+            materials.push(...imgs);
+            renderMats();
+          };
+        }
+      }
+
+      // ===== 2. 再异步加载编辑数据 =====
+      const self = this;
+      (async () => {
+        if (isEdit) {
+          try {
+            const s = await db.get(db.STORES.study, id);
+            if (!s) {
+              UI.toast('未找到该任务');
+              UI.hideSheet();
+              return;
+            }
+            Object.assign(data, s);
+            root.querySelector('#f_title').value = s.title || '';
+            root.querySelector('#f_subject').value = s.subject || self.subjects[0];
+            root.querySelector('#f_goal').value = s.goal || '';
+            root.querySelector('#f_note').value = s.note || '';
+            const freqType = s.frequency?.type || 'daily';
+            root.querySelector('#f_freq').value = freqType;
+            if (freqType === 'custom') {
+              root.querySelector('#freqDaysRow').style.display = '';
+              root.querySelector('#f_freqdays').value = s.frequency?.days || 3;
+            }
+            materials = [...(s.materials || [])];
+            renderMats();
+            loaded = true;
+          } catch (err) {
+            console.error('加载学习任务失败', err);
+            UI.toast('加载失败：' + (err && err.message ? err.message : err));
+            UI.hideSheet();
+          }
+        } else {
+          root.querySelector('#f_subject').value = initSubject;
+          renderMats();
+          loaded = true;
+        }
+      })();
     });
   },
 
