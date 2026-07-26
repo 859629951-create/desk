@@ -199,23 +199,12 @@ const Recipe = {
       </div>
     `;
 
-    UI.showSheet(isEdit ? '编辑菜谱' : '新建菜谱', body, async (root) => {
+    UI.showSheet(isEdit ? '编辑菜谱' : '新建菜谱', body, (root) => {
       let image = '';
       let extractedIngredients = [];
       let extractedSteps = [];
-
-      if (isEdit) {
-        const r = await db.get(db.STORES.recipe, id);
-        root.querySelector('#f_name').value = r.name || '';
-        root.querySelector('#f_cuisine').value = r.cuisine || this.cuisines[0];
-        root.querySelector('#f_diff').value = r.difficulty || '⭐ 简单';
-        root.querySelector('#f_text').value = r.recipeText || '';
-        image = r.image || '';
-        extractedIngredients = r.ingredients || [];
-        extractedSteps = r.steps || [];
-        if (image) renderImg();
-        renderExtracted();
-      }
+      let loaded = false;
+      const self = this;
 
       function renderImg() {
         const grid = root.querySelector('#imgGrid');
@@ -273,6 +262,7 @@ const Recipe = {
         });
       }
 
+      // 先同步绑定事件
       root.querySelector('#f_ai').onclick = async () => {
         const text = root.querySelector('#f_text').value.trim();
         if (!text) {
@@ -281,7 +271,6 @@ const Recipe = {
         }
         const out = root.querySelector('#aiResult');
         out.innerHTML = `<div class="ai-bubble loading">正在识别原料与做法</div>`;
-        // 本地提取 + AI 提示
         const ings = AI.extractIngredients(text);
         const steps = text
           .split(/\d+[.、)]|\n|步骤/)
@@ -289,7 +278,6 @@ const Recipe = {
           .filter((s) => s.length > 5 && !/^[原料|材料|食材]/.test(s))
           .slice(0, 10);
         const hint = await AI.generate('请帮我整理这道菜谱的原料清单和做法步骤', text);
-        // extractIngredients 已返回 {name, have} 对象数组，直接使用即可
         extractedIngredients = ings.map((n) => {
           if (typeof n === 'string') return { name: n, have: false };
           return { name: n.name || String(n), have: n.have || false };
@@ -301,6 +289,10 @@ const Recipe = {
       };
 
       root.querySelector('#f_save').onclick = async () => {
+        if (isEdit && !loaded) {
+          UI.toast('数据加载中，请稍候');
+          return;
+        }
         const name = root.querySelector('#f_name').value.trim();
         if (!name) {
           UI.toast('请输入菜名');
@@ -319,20 +311,48 @@ const Recipe = {
           const r = await db.get(db.STORES.recipe, id);
           Object.assign(r, payload);
           await db.put(db.STORES.recipe, r);
-          // 同步原料到买菜清单
-          await this.syncIngredients(id, name, extractedIngredients);
+          await self.syncIngredients(id, name, extractedIngredients);
         } else {
           const r = await db.add(db.STORES.recipe, { ...payload, cooked: false });
-          await this.syncIngredients(r.id, name, extractedIngredients);
+          await self.syncIngredients(r.id, name, extractedIngredients);
         }
         UI.hideSheet();
         UI.toast(isEdit ? '已保存' : '已添加菜谱');
-        this.list();
+        self.list();
       };
 
-      if (isEdit) {
-        root.querySelector('#f_cancel').onclick = () => UI.hideSheet();
-      }
+      const cancelBtn = root.querySelector('#f_cancel');
+      if (cancelBtn) cancelBtn.onclick = () => UI.hideSheet();
+
+      // 再异步加载编辑数据
+      (async () => {
+        if (isEdit) {
+          try {
+            const r = await db.get(db.STORES.recipe, id);
+            if (!r) {
+              UI.toast('未找到该菜谱');
+              UI.hideSheet();
+              return;
+            }
+            root.querySelector('#f_name').value = r.name || '';
+            root.querySelector('#f_cuisine').value = r.cuisine || self.cuisines[0];
+            root.querySelector('#f_diff').value = r.difficulty || '⭐ 简单';
+            root.querySelector('#f_text').value = r.recipeText || '';
+            image = r.image || '';
+            extractedIngredients = r.ingredients || [];
+            extractedSteps = r.steps || [];
+            if (image) renderImg();
+            renderExtracted();
+            loaded = true;
+          } catch (err) {
+            console.error('加载菜谱失败', err);
+            UI.toast('加载失败：' + (err && err.message ? err.message : err));
+            UI.hideSheet();
+          }
+        } else {
+          loaded = true;
+        }
+      })();
     });
   },
 

@@ -136,15 +136,16 @@ const Interest = {
         ${isEdit ? '<button class="btn btn-ghost" id="f_cancel">取消</button>' : ''}
         <button class="btn btn-primary" id="f_save">${isEdit ? '保存' : '添加'}</button>
       </div>`;
-    UI.showSheet(isEdit ? '编辑兴趣' : '新建兴趣', body, async (root) => {
-      if (isEdit) {
-        const i = await db.get(db.STORES.interest, id);
-        root.querySelector('#f_title').value = i.title || '';
-        root.querySelector('#f_cat').value = i.category || this.categories[0];
-        root.querySelector('#f_pri').value = i.priority || '低';
-        root.querySelector('#f_note').value = i.note || '';
-      }
+    UI.showSheet(isEdit ? '编辑兴趣' : '新建兴趣', body, (root) => {
+      let loaded = false;
+      const self = this;
+
+      // 先同步绑定事件
       root.querySelector('#f_save').onclick = async () => {
+        if (isEdit && !loaded) {
+          UI.toast('数据加载中，请稍候');
+          return;
+        }
         const title = root.querySelector('#f_title').value.trim();
         if (!title) return UI.toast('请输入内容');
         const payload = {
@@ -162,9 +163,35 @@ const Interest = {
         }
         UI.hideSheet();
         UI.toast(isEdit ? '已保存' : '已添加');
-        this.list();
+        self.list();
       };
-      if (isEdit) root.querySelector('#f_cancel').onclick = () => UI.hideSheet();
+      const cancelBtn = root.querySelector('#f_cancel');
+      if (cancelBtn) cancelBtn.onclick = () => UI.hideSheet();
+
+      // 再异步加载编辑数据
+      (async () => {
+        if (isEdit) {
+          try {
+            const i = await db.get(db.STORES.interest, id);
+            if (!i) {
+              UI.toast('未找到该记录');
+              UI.hideSheet();
+              return;
+            }
+            root.querySelector('#f_title').value = i.title || '';
+            root.querySelector('#f_cat').value = i.category || self.categories[0];
+            root.querySelector('#f_pri').value = i.priority || '低';
+            root.querySelector('#f_note').value = i.note || '';
+            loaded = true;
+          } catch (err) {
+            console.error('加载兴趣记录失败', err);
+            UI.toast('加载失败：' + (err && err.message ? err.message : err));
+            UI.hideSheet();
+          }
+        } else {
+          loaded = true;
+        }
+      })();
     });
   }
 };

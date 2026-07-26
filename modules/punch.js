@@ -138,16 +138,16 @@ const Punch = {
         ${isEdit ? '<button class="btn btn-ghost" id="f_cancel">取消</button>' : ''}
         <button class="btn btn-primary" id="f_save">${isEdit ? '保存' : '添加'}</button>
       </div>`;
-    UI.showSheet(isEdit ? '编辑打卡' : '新建打卡', body, async (root) => {
-      if (isEdit) {
-        const p = await db.get(db.STORES.punch, id);
-        root.querySelector('#f_name').value = p.name || '';
-        root.querySelector('#f_cat').value = p.category || this.categories[0];
-        root.querySelector('#f_rate').value = p.rating || '';
-        root.querySelector('#f_loc').value = p.location || '';
-        root.querySelector('#f_note').value = p.note || '';
-      }
+    UI.showSheet(isEdit ? '编辑打卡' : '新建打卡', body, (root) => {
+      let loaded = false;
+      const self = this;
+
+      // 先同步绑定事件
       root.querySelector('#f_save').onclick = async () => {
+        if (isEdit && !loaded) {
+          UI.toast('数据加载中，请稍候');
+          return;
+        }
         const name = root.querySelector('#f_name').value.trim();
         if (!name) return UI.toast('请输入地点名称');
         const payload = {
@@ -166,9 +166,36 @@ const Punch = {
         }
         UI.hideSheet();
         UI.toast(isEdit ? '已保存' : '已添加');
-        this.list();
+        self.list();
       };
-      if (isEdit) root.querySelector('#f_cancel').onclick = () => UI.hideSheet();
+      const cancelBtn = root.querySelector('#f_cancel');
+      if (cancelBtn) cancelBtn.onclick = () => UI.hideSheet();
+
+      // 再异步加载编辑数据
+      (async () => {
+        if (isEdit) {
+          try {
+            const p = await db.get(db.STORES.punch, id);
+            if (!p) {
+              UI.toast('未找到该记录');
+              UI.hideSheet();
+              return;
+            }
+            root.querySelector('#f_name').value = p.name || '';
+            root.querySelector('#f_cat').value = p.category || self.categories[0];
+            root.querySelector('#f_rate').value = p.rating || '';
+            root.querySelector('#f_loc').value = p.location || '';
+            root.querySelector('#f_note').value = p.note || '';
+            loaded = true;
+          } catch (err) {
+            console.error('加载打卡记录失败', err);
+            UI.toast('加载失败：' + (err && err.message ? err.message : err));
+            UI.hideSheet();
+          }
+        } else {
+          loaded = true;
+        }
+      })();
     });
   },
 

@@ -1,5 +1,5 @@
 // 今日有雨 Service Worker
-const CACHE_NAME = 'desk-v8';
+const CACHE_NAME = 'desk-v9';
 const CORE_ASSETS = [
   './',
   './index.html',

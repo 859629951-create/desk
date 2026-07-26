@@ -217,6 +217,7 @@ const Travel = {
 
   edit(id) {
     const isEdit = !!id;
+    const today = UI.todayStr();
     const body = `
       <div class="form-row">
         <label class="label">目的地</label>
@@ -239,42 +240,142 @@ const Travel = {
         </div>
       </div>
       <div class="form-row">
+        <label class="label">状态</label>
+        <select class="field" id="f_status">
+          <option value="todo">📌 想去</option>
+          <option value="done">✅ 已去</option>
+        </select>
+      </div>
+      <div class="form-row" id="doneDateRow" style="display:none;">
+        <label class="label">去过日期</label>
+        <input class="field" id="f_donedate" type="date" value="${today}">
+      </div>
+      <div class="form-row">
         <label class="label">想做的事 / 攻略</label>
         <textarea class="field" id="f_note" placeholder="必去景点、美食、注意事项..." maxlength="300"></textarea>
+      </div>
+      <div class="form-row">
+        <label class="label">照片</label>
+        <div class="img-grid" id="photoGrid">
+          <div class="upload-trigger" id="photoAdd">＋<span>上传照片</span></div>
+        </div>
+        <div style="font-size:11px;color:var(--ink-mute);margin-top:6px">上传旅行照片（风景、美食、合影等）</div>
       </div>
       <div class="form-actions">
         ${isEdit ? '<button class="btn btn-ghost" id="f_cancel">取消</button>' : ''}
         <button class="btn btn-primary" id="f_save">${isEdit ? '保存' : '添加'}</button>
       </div>`;
-    UI.showSheet(isEdit ? '编辑目的地' : '新建目的地', body, async (root) => {
-      if (isEdit) {
-        const t = await db.get(db.STORES.travel, id);
-        root.querySelector('#f_name').value = t.name || '';
-        root.querySelector('#f_loc').value = t.location || '';
-        root.querySelector('#f_season').value = t.season || '';
-        root.querySelector('#f_note').value = t.note || '';
+    UI.showSheet(isEdit ? '编辑目的地' : '新建目的地', body, (root) => {
+      let photos = [];
+      let loaded = false;
+      const self = this;
+
+      // ===== 1. 先同步绑定所有事件 =====
+      // 状态切换：已去时显示日期选择
+      root.querySelector('#f_status').onchange = (e) => {
+        const dateRow = root.querySelector('#doneDateRow');
+        dateRow.style.display = e.target.value === 'done' ? '' : 'none';
+      };
+
+      // 照片网格渲染
+      function renderPhotos() {
+        const grid = root.querySelector('#photoGrid');
+        const addBtn = '<div class="upload-trigger" id="photoAdd">＋<span>上传照片</span></div>';
+        grid.innerHTML =
+          photos
+            .map(
+              (p, i) => `
+          <div class="img-cell">
+            <img src="${p}" alt="照片">
+            <button class="del" data-i="${i}">✕</button>
+          </div>`
+            )
+            .join('') + addBtn;
+        grid.querySelectorAll('.del').forEach((d) => {
+          d.onclick = () => {
+            photos.splice(+d.dataset.i, 1);
+            renderPhotos();
+          };
+        });
+        const addEl = root.querySelector('#photoAdd');
+        if (addEl) {
+          addEl.onclick = async () => {
+            const imgs = await UI.pickImages(9);
+            photos.push(...imgs);
+            renderPhotos();
+          };
+        }
       }
+
+      // 保存按钮
       root.querySelector('#f_save').onclick = async () => {
+        if (isEdit && !loaded) {
+          UI.toast('数据加载中，请稍候');
+          return;
+        }
         const name = root.querySelector('#f_name').value.trim();
         if (!name) return UI.toast('请输入目的地');
+        const status = root.querySelector('#f_status').value;
+        const doneDate = status === 'done' ? root.querySelector('#f_donedate').value : '';
         const payload = {
           name,
           location: root.querySelector('#f_loc').value.trim(),
           season: root.querySelector('#f_season').value,
-          note: root.querySelector('#f_note').value.trim()
+          note: root.querySelector('#f_note').value.trim(),
+          done: status === 'done',
+          doneDate,
+          photos
         };
         if (isEdit) {
           const t = await db.get(db.STORES.travel, id);
           Object.assign(t, payload);
           await db.put(db.STORES.travel, t);
         } else {
-          await db.add(db.STORES.travel, { ...payload, done: false, photos: [] });
+          await db.add(db.STORES.travel, { ...payload, journal: [] });
         }
         UI.hideSheet();
         UI.toast(isEdit ? '已保存' : '已添加');
-        this.list();
+        self.list();
       };
-      if (isEdit) root.querySelector('#f_cancel').onclick = () => UI.hideSheet();
+
+      // 取消按钮
+      const cancelBtn = root.querySelector('#f_cancel');
+      if (cancelBtn) {
+        cancelBtn.onclick = () => UI.hideSheet();
+      }
+
+      // ===== 2. 异步加载编辑数据 =====
+      renderPhotos(); // 先渲染空网格，保证上传按钮可用
+      (async () => {
+        if (isEdit) {
+          try {
+            const t = await db.get(db.STORES.travel, id);
+            if (!t) {
+              UI.toast('未找到该目的地');
+              UI.hideSheet();
+              return;
+            }
+            root.querySelector('#f_name').value = t.name || '';
+            root.querySelector('#f_loc').value = t.location || '';
+            root.querySelector('#f_season').value = t.season || '';
+            root.querySelector('#f_status').value = t.done ? 'done' : 'todo';
+            if (t.done) {
+              root.querySelector('#doneDateRow').style.display = '';
+              root.querySelector('#f_donedate').value = t.doneDate || today;
+            }
+            root.querySelector('#f_note').value = t.note || '';
+            photos = [...(t.photos || [])];
+            renderPhotos();
+            loaded = true;
+          } catch (err) {
+            console.error('加载旅游目的地失败', err);
+            UI.toast('加载失败：' + (err && err.message ? err.message : err));
+            UI.hideSheet();
+          }
+        } else {
+          loaded = true;
+        }
+      })();
     });
   },
 

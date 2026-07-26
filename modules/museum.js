@@ -112,15 +112,16 @@ const Museum = {
         <button class="btn btn-primary" id="f_save">${isEdit ? '保存' : '新建项目'}</button>
       </div>
     `;
-    UI.showSheet(isEdit ? '编辑博物馆' : '新建博物馆项目', body, async (root) => {
-      if (isEdit) {
-        const m = await db.get(db.STORES.museum, id);
-        root.querySelector('#f_name').value = m.name || '';
-        root.querySelector('#f_loc').value = m.location || '';
-        root.querySelector('#f_date').value = m.visitDate || '';
-        root.querySelector('#f_note').value = m.note || '';
-      }
+    UI.showSheet(isEdit ? '编辑博物馆' : '新建博物馆项目', body, (root) => {
+      let loaded = false;
+      const self = this;
+
+      // 先同步绑定事件
       root.querySelector('#f_save').onclick = async () => {
+        if (isEdit && !loaded) {
+          UI.toast('数据加载中，请稍候');
+          return;
+        }
         const name = root.querySelector('#f_name').value.trim();
         if (!name) {
           UI.toast('请输入博物馆名称');
@@ -141,9 +142,35 @@ const Museum = {
         }
         UI.hideSheet();
         UI.toast(isEdit ? '已保存' : '已新建');
-        this.list();
+        self.list();
       };
-      if (isEdit) root.querySelector('#f_cancel').onclick = () => UI.hideSheet();
+      const cancelBtn = root.querySelector('#f_cancel');
+      if (cancelBtn) cancelBtn.onclick = () => UI.hideSheet();
+
+      // 再异步加载编辑数据
+      (async () => {
+        if (isEdit) {
+          try {
+            const m = await db.get(db.STORES.museum, id);
+            if (!m) {
+              UI.toast('未找到该博物馆');
+              UI.hideSheet();
+              return;
+            }
+            root.querySelector('#f_name').value = m.name || '';
+            root.querySelector('#f_loc').value = m.location || '';
+            root.querySelector('#f_date').value = m.visitDate || '';
+            root.querySelector('#f_note').value = m.note || '';
+            loaded = true;
+          } catch (err) {
+            console.error('加载博物馆失败', err);
+            UI.toast('加载失败：' + (err && err.message ? err.message : err));
+            UI.hideSheet();
+          }
+        } else {
+          loaded = true;
+        }
+      })();
     });
   },
 
