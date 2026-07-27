@@ -1,5 +1,5 @@
 // 今日有雨 Service Worker
-const CACHE_NAME = 'desk-v10';
+const CACHE_NAME = 'desk-v11';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -11,6 +11,18 @@ const CORE_ASSETS = [
   './scripts/app.js',
   './scripts/router.js',
   './scripts/notify.js',
+  './modules/home.js',
+  './modules/more.js',
+  './modules/study.js',
+  './modules/punch.js',
+  './modules/travel.js',
+  './modules/interest.js',
+  './modules/recipe.js',
+  './modules/account.js',
+  './modules/work.js',
+  './modules/museum.js',
+  './modules/pet.js',
+  './modules/settings.js',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];

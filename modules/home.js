@@ -110,6 +110,14 @@ router.register('home', () => {
           </div>
           <div class="dc-body" id="dcInterest">加载中...</div>
         </div>
+        <div class="dash-card accent-gold" data-route="pet">
+          <div class="dc-bar"></div>
+          <div class="dc-head">
+            <span class="dc-icon">🐾</span>
+            <span class="dc-title">宠物</span>
+          </div>
+          <div class="dc-body" id="dcPet">加载中...</div>
+        </div>
       </div>
 
       <!-- 每日一言 -->
@@ -142,7 +150,7 @@ router.register('home', () => {
 
   // 异步加载各模块数据
   (async () => {
-    const [studies, accounts, logs, travels, recipes, ings, museums, relics, works, punchs, interests] = await Promise.all([
+    const [studies, accounts, logs, travels, recipes, ings, museums, relics, works, punchs, interests, pets] = await Promise.all([
       db.all(db.STORES.study),
       db.all(db.STORES.account),
       db.all(db.STORES.accountLog),
@@ -153,7 +161,8 @@ router.register('home', () => {
       db.all(db.STORES.relic),
       db.all(db.STORES.work),
       db.all(db.STORES.punch),
-      db.all(db.STORES.interest)
+      db.all(db.STORES.interest),
+      db.all(db.STORES.pet)
     ]);
 
     // 今日待办速览 - 汇总各模块待办
@@ -335,5 +344,19 @@ router.register('home', () => {
       <span class="highlight">${intTodo}</span><span style="font-size:12px;color:var(--ink-mute)"> 想做</span>
       <div class="dc-foot">${interests.length} 件想做的事</div>
     `;
+
+    // 宠物卡片
+    const petEl = document.getElementById('dcPet');
+    if (petEl) {
+      if (pets.length === 0) {
+        petEl.innerHTML = `<span style="font-size:12px;color:var(--ink-mute)">点击添加宠物</span>`;
+      } else {
+        const names = pets.map((p) => p.name).join('、');
+        petEl.innerHTML = `
+          <span class="highlight gold">${pets.length}</span><span style="font-size:12px;color:var(--ink-mute)"> 只宝贝</span>
+          <div class="dc-foot">${names.length > 20 ? names.slice(0, 20) + '...' : names}</div>
+        `;
+      }
+    }
   })();
 });

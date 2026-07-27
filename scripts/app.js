@@ -12,6 +12,7 @@ const App = {
   ],
 
   moreModules: [
+    { key: 'pet', icon: '🐾', label: '宠物记录', sub: '健康与成长' },
     { key: 'recipe', icon: '🍳', label: '我会下厨', sub: '菜谱与买菜' },
     { key: 'museum', icon: '🏺', label: '博物馆掠影', sub: '文物识别' },
     { key: 'punch', icon: '📍', label: '打卡清单', sub: '吃喝玩乐' },
@@ -30,6 +31,7 @@ const App = {
     interest: { title: '兴趣清单', sub: '把生活过成想要的样子' },
     account: { title: '记账本', sub: '每一笔都有去处' },
     work: { title: '工作清单', sub: '今日事今日毕' },
+    pet: { title: '宠物记录', sub: '健康与成长 · 陪伴每一天' },
     settings: { title: '设置', sub: '让手账更懂你' },
     more: { title: '更多模块', sub: '生活的方方面面' }
   },
@@ -367,14 +369,15 @@ App.search = async (q) => {
     }
   };
 
-  const [studies, punchs, travels, interests, recipes, works, museums] = await Promise.all([
+  const [studies, punchs, travels, interests, recipes, works, museums, pets] = await Promise.all([
     db.all(db.STORES.study),
     db.all(db.STORES.punch),
     db.all(db.STORES.travel),
     db.all(db.STORES.interest),
     db.all(db.STORES.recipe),
     db.all(db.STORES.work),
-    db.all(db.STORES.museum)
+    db.all(db.STORES.museum),
+    db.all(db.STORES.pet)
   ]);
 
   studies.forEach((s) => push('study', '📚', '学习', s.title, s.subject));
@@ -384,6 +387,7 @@ App.search = async (q) => {
   recipes.forEach((r) => push('recipe', '🍳', '下厨', r.name, r.cuisine));
   works.forEach((w) => push('work', '💼', '工作', w.title, w.project));
   museums.forEach((m) => push('museum', '🏺', '博物馆', m.name, m.location));
+  pets.forEach((p) => push('pet', '🐾', '宠物', p.name, p.species));
 
   return results;
 };

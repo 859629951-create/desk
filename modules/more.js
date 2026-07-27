@@ -26,6 +26,7 @@ router.register('more', () => {
               m.key === 'recipe' ? 'accent-gold' :
               m.key === 'museum' ? 'accent-rust' :
               m.key === 'punch' ? 'accent-rust' :
+              m.key === 'pet' ? 'accent-gold' :
               m.key === 'interest' ? '' :
               m.key === 'work' ? 'accent-blue' : '';
             return `

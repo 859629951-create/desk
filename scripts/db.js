@@ -4,7 +4,7 @@
    ============================================ */
 
 const DB_NAME = 'deskDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORES = {
   study: 'study', // 学习清单
@@ -19,7 +19,12 @@ const STORES = {
   accountLog: 'accountLog', // 记账流水
   work: 'work', // 工作清单
   museum: 'museum', // 博物馆项目
-  relic: 'relic' // 文物
+  relic: 'relic', // 文物
+  pet: 'pet', // 宠物档案
+  petWeight: 'petWeight', // 体重记录
+  petHealth: 'petHealth', // 健康/医疗记录（疫苗/驱虫/洗澡/症状/手术/就医/喂养）
+  petMedia: 'petMedia', // 阶段照片
+  petExpense: 'petExpense' // 宠物花销
 };
 
 let _db = null;

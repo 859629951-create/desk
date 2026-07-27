@@ -2174,3 +2174,287 @@
   gap: 6px;
   margin-top: 8px;
 }
+
+/* ===== 宠物模块 ===== */
+.pet-card .pet-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pet-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 2px solid var(--forest-glow);
+  background: var(--paper-deep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px var(--paper-shadow);
+}
+.pet-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pet-avatar-placeholder {
+  font-size: 28px;
+}
+.pet-avatar-lg {
+  width: 80px;
+  height: 80px;
+}
+.pet-avatar-lg .pet-avatar-placeholder {
+  font-size: 36px;
+}
+
+/* 头像选择器 */
+.pet-avatar-picker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.pet-avatar-preview {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px dashed var(--ink-line);
+  background: var(--paper-deep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pet-avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pet-avatar-preview .pet-avatar-placeholder {
+  font-size: 32px;
+}
+
+/* 宠物档案卡 */
+.pet-profile-card {
+  position: relative;
+}
+.pet-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.pet-profile-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--ink-line);
+}
+.ppi-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ppi-label {
+  font-size: 10px;
+  color: var(--ink-mute);
+  font-family: var(--font-hand);
+}
+.ppi-value {
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* 体重统计行 */
+.pet-stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.pet-stat-box {
+  background: var(--paper-card);
+  border-radius: var(--radius-sm);
+  padding: 10px 4px;
+  text-align: center;
+  border: 1px solid var(--ink-line);
+}
+.pet-stat-box .psb-num {
+  font-family: var(--font-num);
+  font-size: 18px;
+  color: var(--forest);
+  line-height: 1;
+}
+.pet-stat-box .psb-num.gold { color: var(--gold); }
+.pet-stat-box .psb-num.rust { color: var(--rust); }
+.pet-stat-box .psb-num.green { color: var(--forest); }
+.pet-stat-box .psb-label {
+  font-size: 9px;
+  color: var(--ink-mute);
+  margin-top: 4px;
+}
+
+/* 体重记录项 */
+.weight-record-item {
+  padding: 10px 14px;
+}
+
+/* 健康提醒框 */
+.pet-reminder-box {
+  background: linear-gradient(135deg, var(--gold-soft) 0%, var(--rust-soft) 100%);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--gold-light);
+}
+.pet-reminder-box .prb-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--gold-deep);
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+.pet-reminder-box .prb-item {
+  font-size: 12px;
+  color: var(--ink-soft);
+  padding: 4px 0;
+  line-height: 1.5;
+}
+.pet-reminder-box .prb-item.urgent {
+  color: var(--rust);
+  font-weight: 600;
+}
+
+/* 快捷添加按钮 */
+.pet-quick-add {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.pet-qa-btn {
+  padding: 10px 4px;
+  background: var(--paper-card);
+  border: 1.5px solid var(--ink-line);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: all 0.2s;
+}
+.pet-qa-btn:active {
+  background: var(--forest-mist);
+  border-color: var(--forest);
+  color: var(--forest);
+  transform: scale(0.96);
+}
+
+/* 健康记录统计 */
+.pet-health-summary {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+}
+.phs-item {
+  flex-shrink: 0;
+  text-align: center;
+  background: var(--paper-card);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  min-width: 60px;
+}
+.phs-icon {
+  font-size: 18px;
+  display: block;
+}
+.phs-count {
+  font-family: var(--font-num);
+  font-size: 18px;
+  color: var(--forest);
+  display: block;
+  margin-top: 2px;
+}
+.phs-label {
+  font-size: 10px;
+  color: var(--ink-mute);
+  display: block;
+}
+
+/* 健康记录项 */
+.health-record-item {
+  padding: 10px 14px;
+}
+
+/* 宠物照片 */
+.pet-photo-cell {
+  cursor: pointer;
+}
+.pet-photo-note {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,0.6));
+  color: #fff;
+  font-size: 9px;
+  padding: 8px 4px 4px;
+  text-align: center;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 花销概览 */
+.pet-expense-overview {
+  background: linear-gradient(135deg, var(--forest) 0%, var(--forest-deep) 100%);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  color: var(--paper-light);
+  position: relative;
+  overflow: hidden;
+}
+.pet-expense-overview::before {
+  content: '';
+  position: absolute;
+  right: -20px;
+  top: -20px;
+  width: 90px;
+  height: 90px;
+  background: radial-gradient(circle, rgba(197, 213, 185, 0.1) 0%, transparent 70%);
+  border-radius: 50%;
+}
+.pet-expense-overview .peo-main {
+  position: relative;
+  z-index: 1;
+}
+.pet-expense-overview .peo-num {
+  font-family: var(--font-num);
+  font-size: 32px;
+  line-height: 1;
+  color: var(--forest-glow);
+}
+.pet-expense-overview .peo-label {
+  font-size: 11px;
+  opacity: 0.8;
+  margin-top: 4px;
+}
+.pet-expense-overview .peo-sub {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.15);
+  font-size: 11px;
+  opacity: 0.85;
+  position: relative;
+  z-index: 1;
+}
