@@ -2504,11 +2504,13 @@
   font-size: 22px;
   color: var(--ink);
   margin: 0;
+  flex-shrink: 0;
 }
 .sc-sub {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-mute);
   font-family: var(--font-hand);
+  white-space: nowrap;
 }
 
 /* 多邻国打卡大按钮 */

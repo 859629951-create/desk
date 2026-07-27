@@ -4,7 +4,7 @@
    ============================================ */
 
 const DB_NAME = 'deskDB';
-const DB_VERSION = 8;
+const DB_VERSION = 9;
 
 const STORES = {
   study: 'study', // 学习清单
@@ -47,7 +47,10 @@ const STORES = {
   languageTask: 'languageTask', // 语言学习任务（自由文本+频次+优先级）
   dailyTodo: 'dailyTodo',       // 每日待办事项
   newsScript: 'newsScript',     // 新闻科普口播文案缓存
-  dailyQuote: 'dailyQuote'      // 每日金句缓存
+  dailyQuote: 'dailyQuote',      // 每日金句缓存
+  // ===== v9 新增 =====
+  profSubject: 'profSubject',   // 专业学习科目（商法/民法/LEC等）
+  profTask: 'profTask'           // 专业学习任务（自由文本+频次+优先级+打卡）
 };
 
 let _db = null;

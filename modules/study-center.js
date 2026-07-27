@@ -1,7 +1,7 @@
 /* ============================================
-   学习中心 v4
+   学习中心 v5
    - 语言：多邻国打卡 + 自定义语言科目（英语/法语等）+ 学习任务记录
-   - 阅读：读书计划 + 文献阅读任务/PDF上传
+   - 专业：专业科目（商法/民法/LEC等）+ 学习任务打卡 + 读书计划 + 文献阅读
    - 研究生：论文进度 + 课程表（学期/当前周）+ 上课记录 + 思维导图
    - 每日新闻热点：DeepSeek API 每天 10 条
    ============================================ */
@@ -9,7 +9,7 @@
 const StudyCenter = {
   tabs: [
     { key: 'language', label: '语言', icon: '🌍' },
-    { key: 'reading', label: '阅读', icon: '📚' },
+    { key: 'professional', label: '专业', icon: '📚' },
     { key: 'graduate', label: '研究生', icon: '🎓' },
     { key: 'news', label: '新闻', icon: '📰' }
   ],
@@ -21,12 +21,6 @@ const StudyCenter = {
     const main = document.getElementById('appMain');
     main.innerHTML = `
       <div class="fade-up">
-        <div class="sc-header">
-          <div class="sc-title-row">
-            <h2 class="sc-title">学习中心</h2>
-            <span class="sc-sub">日积月累 · 终有所成</span>
-          </div>
-        </div>
         <div class="tabs tabs-scroll" id="scTabs">
           ${this.tabs.map(t => `<div class="tab ${t.key === this.currentTab ? 'active' : ''}" data-tab="${t.key}">${t.icon} ${t.label}</div>`).join('')}
         </div>
@@ -48,7 +42,7 @@ const StudyCenter = {
 
   renderTab(tab) {
     if (tab === 'language') this.renderLanguage();
-    else if (tab === 'reading') this.renderReading();
+    else if (tab === 'professional') this.renderProfessional();
     else if (tab === 'graduate') this.renderGraduate();
     else if (tab === 'news') this.renderNews();
   },
@@ -505,7 +499,7 @@ const StudyCenter = {
 
     // 打卡按钮
     if (!checkedToday) {
-      document.getElementById('tdCheckin').onclick = () => this._doCheckin(taskId, subjectId);
+      document.getElementById('tdCheckin').onclick = () => this._doCheckin(taskId, subjectId, db.STORES.languageTask);
     }
 
     // 渲染日历
@@ -515,8 +509,9 @@ const StudyCenter = {
   },
 
   /* 打卡操作 */
-  async _doCheckin(taskId, subjectId) {
-    const task = await db.get(db.STORES.languageTask, taskId);
+  async _doCheckin(taskId, subjectId, store) {
+    // store = db.STORES.languageTask 或 db.STORES.profTask
+    const task = await db.get(store, taskId);
     if (!task) return;
     const today = UI.todayStr();
 
@@ -560,7 +555,7 @@ const StudyCenter = {
           mood: root.querySelector('#tc_mood').value,
           note: root.querySelector('#tc_note').value.trim()
         });
-        await db.put(db.STORES.languageTask, task);
+        await db.put(store, task);
 
         // 检查是否解锁新徽章
         const newStreak = this._calcStreak(task.checkins);
@@ -574,7 +569,12 @@ const StudyCenter = {
         } else {
           UI.toast('打卡成功，继续加油！');
         }
-        this.showTaskDetail(subjectId, taskId);
+        // 根据 store 判断刷新页面
+        if (store === db.STORES.profTask) {
+          this.showProfTaskDetail(subjectId, taskId);
+        } else {
+          this.showTaskDetail(subjectId, taskId);
+        }
       };
     });
   },
@@ -675,6 +675,206 @@ const StudyCenter = {
     `).join('');
   },
 
+  /* ====== 专业任务详情页（全屏，含打卡/徽章/日历/记录） ====== */
+  async showProfTaskDetail(subjectId, taskId) {
+    // 如果 taskId 为 null，走编辑弹窗新建
+    if (!taskId) {
+      this.showProfTaskEditor(subjectId, null);
+      return;
+    }
+
+    const task = await db.get(db.STORES.profTask, taskId);
+    if (!task) return;
+    const subject = await db.get(db.STORES.profSubject, subjectId);
+    const checkins = task.checkins || [];
+    const streak = this._calcStreak(checkins);
+    const maxStreak = this._calcMaxStreak(checkins);
+    const unlocked = this._unlockedBadges(streak, maxStreak);
+    const checkedToday = this._isCheckedToday(checkins, task.frequency);
+
+    const main = document.getElementById('appMain');
+    App.setFab(() => this.showProfTaskEditor(subjectId, taskId));
+
+    main.innerHTML = `
+      <div class="fade-up">
+        <button class="detail-back" id="tdBack">‹ 返回</button>
+        <div class="card" style="padding:16px;margin-bottom:14px;">
+          <div class="tape green" style="top:-8px;left:20px;"></div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+            <span class="chip blue">${subject?.icon || '📖'} ${subject?.name || '科目'}</span>
+            <span class="chip ${task.priority === '高' ? 'red' : task.priority === '中' ? 'yellow' : 'gray'}">${task.priority === '高' ? '🔴' : task.priority === '中' ? '🟡' : '⚪'} ${task.priority || '中'}</span>
+            <span class="chip gray">${task.frequency === '每天' ? '📅 每天' : task.frequency === '每周' ? '📆 每周' : '⚙️ ' + (task.customFreq || '自定义')}</span>
+            ${task.done ? '<span class="chip green">已完成</span>' : ''}
+          </div>
+          <h2 style="font-family:var(--font-display);font-size:22px;color:var(--ink);margin-bottom:6px">${task.content}</h2>
+          ${task.note ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:6px;line-height:1.6">${task.note}</div>` : ''}
+          <div style="display:flex;gap:8px;margin-top:14px;">
+            <button class="btn btn-primary" id="tdCheckin" style="flex:1${checkedToday ? ';opacity:0.6' : ''}" ${checkedToday ? 'disabled' : ''}>${checkedToday ? '✓ 今日已打卡' : '📅 立即打卡'}</button>
+            <button class="btn btn-ghost" id="tdEdit" style="flex:1">✏️ 编辑</button>
+          </div>
+        </div>
+
+        <!-- 连续打卡状态 -->
+        <div class="study-streak-box">
+          <div class="ssb-main">
+            <div class="ssb-streak">
+              <span class="ssb-fire">🔥</span>
+              <div>
+                <div class="ssb-num">${streak}</div>
+                <div class="ssb-label">当前连续</div>
+              </div>
+            </div>
+            <div class="ssb-max">
+              <div class="ssb-max-num">${maxStreak}</div>
+              <div class="ssb-max-label">历史最长</div>
+            </div>
+          </div>
+          <div class="ssb-progress">${this._renderStreakBar(streak, maxStreak)}</div>
+        </div>
+
+        <!-- 成就徽章 -->
+        <div class="section-title">🎖️ 成就徽章</div>
+        <div class="badge-row">${this._renderBadges(unlocked)}</div>
+
+        <!-- 打卡日历 -->
+        <div class="section-title">📅 打卡日历</div>
+        <div class="card" style="padding:14px;" id="tdCalendar"></div>
+
+        <!-- 打卡记录 -->
+        <div class="section-title">📝 打卡记录</div>
+        <div id="tdCheckinList"></div>
+
+        <div style="height:20px"></div>
+      </div>
+    `;
+
+    document.getElementById('tdBack').onclick = () => this.showProfSubjectDetail(subjectId);
+    document.getElementById('tdEdit').onclick = () => this.showProfTaskEditor(subjectId, taskId);
+
+    // 打卡按钮
+    if (!checkedToday) {
+      document.getElementById('tdCheckin').onclick = () => this._doCheckin(taskId, subjectId, db.STORES.profTask);
+    }
+
+    // 渲染日历
+    this._renderCalendar(checkins);
+    // 渲染打卡记录
+    this._renderCheckinList(checkins);
+  },
+
+  /* 专业任务编辑弹窗（新建/编辑共用） */
+  showProfTaskEditor(subjectId, taskId) {
+    const isEdit = !!taskId;
+    const body = `
+      <div class="form-row">
+        <label class="label">任务内容 *</label>
+        <textarea class="field" id="tf_content" placeholder="如：背诵商法总论第三章、做 2 道案例分析" rows="3" maxlength="200"></textarea>
+      </div>
+      <div class="form-row-2">
+        <div>
+          <label class="label">执行频次</label>
+          <select class="field" id="tf_freq">
+            <option value="每天">每天</option>
+            <option value="每周">每周</option>
+            <option value="自定义">自定义</option>
+          </select>
+        </div>
+        <div>
+          <label class="label">优先级</label>
+          <select class="field" id="tf_prio">
+            <option value="中">中</option>
+            <option value="高">高</option>
+            <option value="低">低</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row" id="tf_custom_row" style="display:none;">
+        <label class="label">自定义频次描述</label>
+        <input class="field" id="tf_custom" placeholder="如：每周一三五" maxlength="30">
+      </div>
+      <div class="form-row">
+        <label class="label">备注</label>
+        <textarea class="field" id="tf_note" placeholder="可选备注" rows="2" maxlength="200"></textarea>
+      </div>
+      <div class="form-actions">
+        ${isEdit ? '<button class="btn btn-ghost" id="tf_del" style="color:var(--cinnabar);flex:1;">🗑 删除</button>' : ''}
+        <button class="btn btn-ghost" id="tf_cancel">${isEdit ? '取消' : '取消'}</button>
+        <button class="btn btn-primary" id="tf_save">${isEdit ? '保存' : '添加任务'}</button>
+      </div>
+    `;
+
+    UI.showSheet(isEdit ? '编辑任务' : '添加任务', body, (root) => {
+      let loaded = true;
+      const freqSel = root.querySelector('#tf_freq');
+      const customRow = root.querySelector('#tf_custom_row');
+
+      freqSel.onchange = () => {
+        customRow.style.display = freqSel.value === '自定义' ? '' : 'none';
+      };
+
+      root.querySelector('#tf_cancel').onclick = () => UI.hideSheet();
+
+      // 编辑模式：删除按钮
+      const delBtn = root.querySelector('#tf_del');
+      if (delBtn) {
+        delBtn.onclick = async () => {
+          if (await UI.confirm('确定删除这个学习任务？打卡记录也将删除。')) {
+            await db.remove(db.STORES.profTask, taskId);
+            UI.hideSheet();
+            UI.toast('已删除');
+            this.showProfSubjectDetail(subjectId);
+          }
+        };
+      }
+
+      root.querySelector('#tf_save').onclick = async () => {
+        if (isEdit && !loaded) {
+          UI.toast('数据加载中，请稍候');
+          return;
+        }
+        const content = root.querySelector('#tf_content').value.trim();
+        if (!content) {
+          UI.toast('请输入任务内容');
+          return;
+        }
+        const frequency = freqSel.value;
+        const priority = root.querySelector('#tf_prio').value;
+        const customFreq = root.querySelector('#tf_custom').value.trim();
+        const note = root.querySelector('#tf_note').value.trim();
+
+        if (isEdit) {
+          const task = await db.get(db.STORES.profTask, taskId);
+          Object.assign(task, { content, frequency, customFreq, note, priority });
+          await db.put(db.STORES.profTask, task);
+        } else {
+          await db.add(db.STORES.profTask, {
+            subjectId, content, frequency, customFreq, note, priority, done: false, checkins: []
+          });
+        }
+        UI.hideSheet();
+        UI.toast(isEdit ? '已保存' : '已添加任务');
+        this.showProfSubjectDetail(subjectId);
+      };
+
+      // 编辑模式：异步加载已有数据
+      if (isEdit) {
+        loaded = false;
+        (async () => {
+          const task = await db.get(db.STORES.profTask, taskId);
+          if (task) {
+            root.querySelector('#tf_content').value = task.content || '';
+            root.querySelector('#tf_freq').value = task.frequency || '每天';
+            root.querySelector('#tf_prio').value = task.priority || '中';
+            root.querySelector('#tf_custom').value = task.customFreq || '';
+            root.querySelector('#tf_note').value = task.note || '';
+            customRow.style.display = task.frequency === '自定义' ? '' : 'none';
+          }
+          loaded = true;
+        })();
+      }
+    });
+  },
+
   subjectMenu(id) {
     const body = `
       <div class="choice-grid">
@@ -748,45 +948,350 @@ const StudyCenter = {
     });
   },
 
-  /* ====== 阅读板块 ====== */
-  async renderReading() {
+  /* ====== 专业板块 ====== */
+  async renderProfessional() {
     const el = document.getElementById('scContent');
-    App.setFab(() => this.addBook());
+    App.setFab(() => this.addProfSubject());
 
+    const subjects = await db.all(db.STORES.profSubject);
+    subjects.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    const allTasks = await db.all(db.STORES.profTask);
+    const today = UI.todayStr();
+
+    // 统计
+    const totalTasks = allTasks.length;
+    const doneTasks = allTasks.filter(t => t.done).length;
+    const todayCheckin = allTasks.filter(t => (t.checkins || []).some(c => c.date === today)).length;
+
+    // 读书/文献
     const books = await db.all(db.STORES.book);
     books.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     const papers = await db.all(db.STORES.paper);
     papers.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
-    // 统计
-    const reading = books.filter(b => b.status === 'reading').length;
-    const done = books.filter(b => b.status === 'done').length;
-
     el.innerHTML = `
       <div class="sc-stats-row">
-        <div class="sc-stat-mini"><span class="n">${books.length}</span><span class="l">读书计划</span></div>
-        <div class="sc-stat-mini"><span class="n" style="color:var(--gold)">${reading}</span><span class="l">阅读中</span></div>
-        <div class="sc-stat-mini"><span class="n" style="color:var(--forest)">${done}</span><span class="l">已读完</span></div>
-        <div class="sc-stat-mini"><span class="n">${papers.length}</span><span class="l">文献任务</span></div>
+        <div class="sc-stat-mini"><span class="n">${subjects.length}</span><span class="l">专业科目</span></div>
+        <div class="sc-stat-mini"><span class="n">${totalTasks}</span><span class="l">学习任务</span></div>
+        <div class="sc-stat-mini"><span class="n" style="color:var(--forest)">${doneTasks}</span><span class="l">已完成</span></div>
+        <div class="sc-stat-mini"><span class="n" style="color:var(--gold)">${todayCheckin}</span><span class="l">今日打卡</span></div>
       </div>
+
+      <button class="btn btn-jade" id="addProfSubject" style="width:100%;margin-bottom:12px;">＋ 添加专业科目</button>
+      <div id="profSubjectList"></div>
 
       <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
         <span>📚 读书计划</span>
-        <button class="btn btn-jade" id="addBookBtn" style="font-size:11px;padding:4px 10px;">＋ 添加</button>
+        <button class="btn btn-jade" id="addBookBtnP" style="font-size:11px;padding:4px 10px;">＋ 添加</button>
       </div>
-      <div id="bookList"></div>
+      <div id="profBookList"></div>
 
       <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
         <span>📄 文献阅读</span>
-        <button class="btn btn-jade" id="addPaperBtn" style="font-size:11px;padding:4px 10px;">＋ 添加</button>
+        <button class="btn btn-jade" id="addPaperBtnP" style="font-size:11px;padding:4px 10px;">＋ 添加</button>
       </div>
-      <div id="paperList"></div>
+      <div id="profPaperList"></div>
     `;
 
-    document.getElementById('addBookBtn').onclick = () => this.addBook();
-    document.getElementById('addPaperBtn').onclick = () => this.addPaper();
-    this.renderBooks(books);
-    this.renderPapers(papers);
+    document.getElementById('addProfSubject').onclick = () => this.addProfSubject();
+    document.getElementById('addBookBtnP').onclick = () => this.addBook();
+    document.getElementById('addPaperBtnP').onclick = () => this.addPaper();
+
+    // 渲染专业科目列表
+    this._renderProfSubjects(subjects, allTasks);
+
+    // 渲染读书（复用原有逻辑，渲染到不同容器）
+    this._renderProfBooks(books);
+    this._renderProfPapers(papers);
+  },
+
+  /* 渲染专业板块的读书列表（复用 renderBooks 逻辑，渲染到 profBookList） */
+  async _renderProfBooks(books) {
+    const el = document.getElementById('profBookList');
+    if (!el) return;
+    if (books.length === 0) {
+      el.innerHTML = `<div class="empty"><div class="emoji">📚</div><div class="hint">添加一本想读的书吧</div></div>`;
+      return;
+    }
+    const statusMap = {
+      'todo': { label: '待读', color: 'gray' },
+      'reading': { label: '阅读中', color: 'yellow' },
+      'done': { label: '已读完', color: 'green' }
+    };
+    el.innerHTML = books.map(b => {
+      const st = statusMap[b.status] || statusMap['todo'];
+      const progress = b.status === 'done' ? 100 : (b.progress || 0);
+      return `
+        <div class="list-item" data-id="${b.id}">
+          <div class="li-row">
+            <span style="font-size:18px">📖</span>
+            <div style="flex:1" data-act="open">
+              <div class="li-title">${b.title}</div>
+              ${b.author ? `<div class="li-sub">${b.author}</div>` : ''}
+              <div class="li-tags">
+                <span class="chip ${st.color}">${st.label}</span>
+                ${b.note ? `<span class="chip gray">📝</span>` : ''}
+              </div>
+              ${b.status !== 'todo' ? `
+                <div class="sc-progress-bar">
+                  <div class="sc-progress-fill" style="width:${progress}%"></div>
+                </div>
+              ` : ''}
+            </div>
+            <button class="icon-btn" data-act="menu" data-bid="${b.id}" style="width:28px;height:28px;font-size:12px">⋯</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    el.querySelectorAll('[data-act="open"]').forEach(item => {
+      item.onclick = () => this.bookDetail(item.closest('.list-item').dataset.id);
+    });
+    el.querySelectorAll('[data-act="menu"]').forEach(b => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        this.bookMenu(b.dataset.bid);
+      };
+    });
+  },
+
+  /* 渲染专业板块的文献列表（复用 renderPapers 逻辑，渲染到 profPaperList） */
+  async _renderProfPapers(papers) {
+    const el = document.getElementById('profPaperList');
+    if (!el) return;
+    if (papers.length === 0) {
+      el.innerHTML = `<div class="empty"><div class="emoji">📄</div><div class="hint">添加一个文献阅读任务</div></div>`;
+      return;
+    }
+    el.innerHTML = papers.map(p => `
+      <div class="list-item" data-id="${p.id}">
+        <div class="li-row">
+          <span style="font-size:16px">📄</span>
+          <div style="flex:1" data-act="open">
+            <div class="li-title">${p.title}</div>
+            ${p.authors ? `<div class="li-sub">${p.authors}</div>` : ''}
+            <div class="li-tags">
+              <span class="chip ${p.status === 'done' ? 'green' : 'gray'}">${p.status === 'done' ? '✅ 已完成' : '📋 待读'}</span>
+              ${p.note ? '<span class="chip blue">📝</span>' : ''}
+            </div>
+          </div>
+          <button class="icon-btn" data-act="menu" data-pid="${p.id}" style="width:28px;height:28px;font-size:12px">⋯</button>
+        </div>
+      </div>
+    `).join('');
+    el.querySelectorAll('[data-act="open"]').forEach(item => {
+      item.onclick = () => this.paperDetail(item.closest('.list-item').dataset.id);
+    });
+    el.querySelectorAll('[data-act="menu"]').forEach(b => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        this.paperMenu(b.dataset.pid);
+      };
+    });
+  },
+
+  /* ====== 专业科目相关方法 ====== */
+  async _renderProfSubjects(subjects, allTasks) {
+    const el = document.getElementById('profSubjectList');
+    if (!el) return;
+    if (subjects.length === 0) {
+      el.innerHTML = `<div class="empty"><div class="emoji">📚</div><div class="hint">添加专业科目（商法学、民法学、LEC等），安排学习任务</div></div>`;
+      return;
+    }
+    el.innerHTML = subjects.map(s => {
+      const sTasks = allTasks.filter(t => t.subjectId === s.id);
+      const doneCount = sTasks.filter(t => t.done).length;
+      return `
+        <div class="list-item" data-id="${s.id}" style="margin-bottom:10px;cursor:pointer;">
+          <div class="li-row">
+            <span style="font-size:20px">${s.icon || '📖'}</span>
+            <div style="flex:1">
+              <div class="li-title">${s.name}</div>
+              <div class="li-tags">
+                <span class="chip gray">${sTasks.length} 个任务</span>
+                ${doneCount > 0 ? `<span class="chip green">✓ ${doneCount} 完成</span>` : ''}
+              </div>
+            </div>
+            <button class="icon-btn" data-act="menu" data-sid="${s.id}" style="width:32px;height:32px;font-size:14px">⋯</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    el.querySelectorAll('.list-item').forEach(item => {
+      const id = item.dataset.id;
+      item.querySelector('[data-act="menu"]').onclick = (e) => {
+        e.stopPropagation();
+        this.profSubjectMenu(id);
+      };
+      item.onclick = (e) => {
+        if (e.target.closest('[data-act="menu"]')) return;
+        this.showProfSubjectDetail(id);
+      };
+    });
+  },
+
+  async showProfSubjectDetail(subjectId) {
+    const subject = await db.get(db.STORES.profSubject, subjectId);
+    const allTasks = await db.all(db.STORES.profTask);
+    const tasks = allTasks.filter(t => t.subjectId === subjectId).sort((a, b) => {
+      if ((a.done || false) !== (b.done || false)) return (a.done || false) ? 1 : -1;
+      const prioMap = { '高': 0, '中': 1, '低': 2 };
+      return (prioMap[a.priority] || 2) - (prioMap[b.priority] || 2);
+    });
+    const totalCount = tasks.length;
+    const doneCount = tasks.filter(t => t.done).length;
+    const main = document.getElementById('appMain');
+
+    main.innerHTML = `
+      <div class="fade-up">
+        <button class="detail-back" id="sdBack">‹ 返回</button>
+        <div class="card" style="padding:16px;margin-bottom:14px;">
+          <h2 style="font-family:var(--font-display);font-size:20px;">${subject?.icon || '📖'} ${subject?.name || '科目'}</h2>
+          <div class="li-tags" style="margin-top:8px">
+            <span class="chip gray">${totalCount} 个任务</span>
+            <span class="chip green">✓ ${doneCount} 完成</span>
+          </div>
+        </div>
+        <div id="taskList"></div>
+      </div>
+    `;
+    document.getElementById('sdBack').onclick = () => this.goBack('professional');
+
+    // 设置 FAB 用于添加任务
+    App.setFab(() => this.showProfTaskDetail(subjectId, null));
+
+    const today = UI.todayStr();
+    const renderTasks = () => {
+      const listEl = document.getElementById('taskList');
+      if (!listEl) return;
+      if (tasks.length === 0) {
+        listEl.innerHTML = `<div class="empty"><div class="emoji">📋</div><div class="hint">还没有任务，点击 + 添加</div></div>`;
+        return;
+      }
+      const prioColorMap = { '高': 'var(--cinnabar)', '中': 'var(--gold)', '低': 'var(--ink-mute)' };
+      const freqLabelMap = { '每天': '每天', '每周': '每周', '自定义': '自定义' };
+      listEl.innerHTML = tasks.map(t => {
+        const prioColor = prioColorMap[t.priority] || 'var(--ink-mute)';
+        const freqLabel = freqLabelMap[t.frequency] || (t.customFreq || '');
+        const tCheckins = t.checkins || [];
+        const tCheckedToday = tCheckins.some(c => c.date === today);
+        const tStreak = this._calcStreak(tCheckins);
+        return `
+          <div class="list-item" data-tid="${t.id}" style="margin-bottom:8px;cursor:pointer;${t.done ? 'opacity:0.6;' : ''}">
+            <div class="li-row">
+              <div style="width:4px;height:32px;border-radius:2px;background:${prioColor};margin-right:10px;flex-shrink:0;"></div>
+              <button class="check ${t.done ? 'done' : ''}" data-act="toggle" data-tid="${t.id}" style="width:22px;height:22px;border-width:1.5px;flex-shrink:0;">✓</button>
+              <div style="flex:1">
+                <div class="li-title" style="${t.done ? 'text-decoration:line-through;' : ''}">${t.content}</div>
+                <div class="li-tags" style="margin-top:4px">
+                  ${freqLabel ? `<span class="chip gray">${freqLabel}</span>` : ''}
+                  ${tStreak > 0 ? `<span class="chip yellow">🔥${tStreak}</span>` : ''}
+                  ${tCheckedToday ? '<span class="chip green">✓ 今日已打卡</span>' : ''}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // 勾选完成/取消完成
+      listEl.querySelectorAll('[data-act="toggle"]').forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          const tid = btn.dataset.tid;
+          const task = await db.get(db.STORES.profTask, tid);
+          task.done = !task.done;
+          await db.put(db.STORES.profTask, task);
+          const localTask = tasks.find(t => t.id === tid);
+          if (localTask) localTask.done = task.done;
+          renderTasks();
+        };
+      });
+
+      // 点击任务卡片打开详情
+      listEl.querySelectorAll('.list-item').forEach(item => {
+        item.onclick = (e) => {
+          if (e.target.closest('[data-act="toggle"]')) return;
+          this.showProfTaskDetail(subjectId, item.dataset.tid);
+        };
+      });
+    };
+
+    renderTasks();
+  },
+
+  addProfSubject(editId) {
+    const isEdit = !!editId;
+    const icons = ['📖', '⚖️', '📑', '📜', '🏛️', '🧑‍⚖️', '💼', '📊', '📝', '🎓', '📘', '📗'];
+    const body = `
+      <div class="form-row">
+        <label class="label">科目名称</label>
+        <input class="field" id="ls_name" placeholder="如：商法学、民法学、LEC" maxlength="20">
+      </div>
+      <div class="form-row">
+        <label class="label">图标</label>
+        <div class="sc-color-picker" id="ls_icons">
+          ${icons.map((ic, i) => `<label class="sc-cp-item"><input type="radio" name="icon" value="${ic}" ${i === 0 ? 'checked' : ''}><span style="font-size:18px;display:flex;align-items:center;justify-content:center">${ic}</span></label>`).join('')}
+        </div>
+      </div>
+      <div class="form-actions">
+        ${isEdit ? '<button class="btn btn-ghost" id="ls_cancel">取消</button>' : ''}
+        <button class="btn btn-primary" id="ls_save">${isEdit ? '保存' : '添加'}</button>
+      </div>
+    `;
+    UI.showSheet(isEdit ? '编辑科目' : '添加专业科目', body, (root) => {
+      root.querySelector('#ls_save').onclick = async () => {
+        const name = root.querySelector('#ls_name').value.trim();
+        if (!name) return UI.toast('请输入科目名称');
+        const icon = root.querySelector('#ls_icons input:checked').value;
+        if (isEdit) {
+          const old = await db.get(db.STORES.profSubject, editId);
+          Object.assign(old, { name, icon });
+          await db.put(db.STORES.profSubject, old);
+        } else {
+          const all = await db.all(db.STORES.profSubject);
+          await db.add(db.STORES.profSubject, { name, icon, sortOrder: all.length });
+        }
+        UI.hideSheet();
+        UI.toast(isEdit ? '已保存' : '已添加');
+        this.renderProfessional();
+      };
+      if (isEdit) {
+        (async () => {
+          const s = await db.get(db.STORES.profSubject, editId);
+          if (s) {
+            root.querySelector('#ls_name').value = s.name || '';
+            const radio = root.querySelector(`#ls_icons input[value="${s.icon}"]`);
+            if (radio) radio.checked = true;
+          }
+        })();
+      }
+    });
+  },
+
+  profSubjectMenu(id) {
+    const body = `
+      <div class="choice-grid">
+        <button class="choice" data-act="edit">✏️ 编辑</button>
+        <button class="choice" data-act="del" style="color:var(--rust)">🗑 删除</button>
+      </div>
+    `;
+    UI.showSheet('科目操作', body, (root) => {
+      root.querySelector('[data-act="edit"]').onclick = () => { UI.hideSheet(); this.addProfSubject(id); };
+      root.querySelector('[data-act="del"]').onclick = async () => {
+        UI.hideSheet();
+        if (await UI.confirm('删除这个科目？相关任务也会删除。')) {
+          await db.remove(db.STORES.profSubject, id);
+          const tasks = await db.all(db.STORES.profTask);
+          for (const t of tasks.filter(t => t.subjectId === id)) {
+            await db.remove(db.STORES.profTask, t.id);
+          }
+          UI.toast('已删除');
+          this.renderProfessional();
+        }
+      };
+    });
   },
 
   async renderBooks(books) {
@@ -853,7 +1358,7 @@ const StudyCenter = {
         UI.hideSheet();
         if (await UI.confirm('删除这本书？')) {
           await db.remove(db.STORES.book, id);
-          this.renderReading();
+          this.renderProfessional();
         }
       };
     });
@@ -918,7 +1423,7 @@ const StudyCenter = {
         }
         UI.hideSheet();
         UI.toast(isEdit ? '已保存' : '已添加');
-        this.renderReading();
+        this.renderProfessional();
       };
       if (isEdit) {
         (async () => {
@@ -970,7 +1475,7 @@ const StudyCenter = {
         <div id="noteList"></div>
       </div>
     `;
-    main.querySelector('[data-act="back"]').onclick = () => this.goBack('reading');
+    main.querySelector('[data-act="back"]').onclick = () => this.goBack('professional');
     main.querySelector('#editBook').onclick = () => this.addBook(id);
     main.querySelector('#addNote').onclick = () => this.addBookNote(id, 'book');
     this.renderNotes(notes, id, 'book');
@@ -1120,7 +1625,7 @@ const StudyCenter = {
         UI.hideSheet();
         if (await UI.confirm('删除这个文献任务？')) {
           await db.remove(db.STORES.paper, id);
-          this.renderReading();
+          this.renderProfessional();
         }
       };
     });
@@ -1174,7 +1679,7 @@ const StudyCenter = {
         }
         UI.hideSheet();
         UI.toast(isEdit ? '已保存' : '已添加');
-        this.renderReading();
+        this.renderProfessional();
       };
       if (isEdit) {
         (async () => {
@@ -1216,7 +1721,7 @@ const StudyCenter = {
         <div id="noteList"></div>
       </div>
     `;
-    main.querySelector('[data-act="back"]').onclick = () => this.goBack('reading');
+    main.querySelector('[data-act="back"]').onclick = () => this.goBack('professional');
     main.querySelector('#editPaper').onclick = () => this.addPaper(id);
     main.querySelector('#addNote').onclick = () => this.addBookNote(id, 'paper');
     this.renderNotes(notes, id, 'paper');
@@ -2769,30 +3274,54 @@ const StudyCenter = {
       '其他': '📖'
     };
 
+    // 语言类科目名称集合（用于判断分流）
+    const languageNames = new Set(['法语', '英语', '日语', '德语', '西班牙语', '意大利语', '俄语', '韩语', '葡萄牙语', 'LEC 法律英语']);
+
     // 收集所有学科
     const subjectNames = [...new Set(oldTasks.map(t => t.subject || '其他'))];
-    const subjectIdMap = {};
-    let sortOrder = 0;
+    const langSubjectIdMap = {};
+    const profSubjectIdMap = {};
+    let langSortOrder = 0;
+    let profSortOrder = 0;
 
     for (const name of subjectNames) {
-      // 检查是否已存在同名科目
-      const existing = await db.query(db.STORES.languageSubject, s => s.name === name);
-      if (existing.length > 0) {
-        subjectIdMap[name] = existing[0].id;
+      const isLanguage = languageNames.has(name);
+
+      if (isLanguage) {
+        // 语言类 → languageSubject
+        const existing = await db.query(db.STORES.languageSubject, s => s.name === name);
+        if (existing.length > 0) {
+          langSubjectIdMap[name] = existing[0].id;
+        } else {
+          const subj = await db.add(db.STORES.languageSubject, {
+            name,
+            icon: iconMap[name] || '📖',
+            sortOrder: langSortOrder++
+          });
+          langSubjectIdMap[name] = subj.id;
+        }
       } else {
-        const subj = await db.add(db.STORES.languageSubject, {
-          name,
-          icon: iconMap[name] || '📖',
-          sortOrder: sortOrder++
-        });
-        subjectIdMap[name] = subj.id;
+        // 非语言类 → profSubject
+        const existing = await db.query(db.STORES.profSubject, s => s.name === name);
+        if (existing.length > 0) {
+          profSubjectIdMap[name] = existing[0].id;
+        } else {
+          const subj = await db.add(db.STORES.profSubject, {
+            name,
+            icon: iconMap[name] || '📖',
+            sortOrder: profSortOrder++
+          });
+          profSubjectIdMap[name] = subj.id;
+        }
       }
     }
 
     // 迁移任务
     let migrated = 0;
     for (const old of oldTasks) {
-      const subjectId = subjectIdMap[old.subject || '其他'];
+      const name = old.subject || '其他';
+      const isLanguage = languageNames.has(name);
+      const subjectId = isLanguage ? langSubjectIdMap[name] : profSubjectIdMap[name];
       if (!subjectId) continue;
 
       // 转换频次
@@ -2804,7 +3333,9 @@ const StudyCenter = {
         else if (old.frequency.type === 'custom') frequency = '自定义';
       }
 
-      const task = await db.add(db.STORES.languageTask, {
+      const store = isLanguage ? db.STORES.languageTask : db.STORES.profTask;
+
+      await db.add(store, {
         subjectId,
         content: old.title || '未命名任务',
         note: old.note || '',
@@ -2844,6 +3375,17 @@ router.register('study/*', (param) => {
   // 新路由：study/subject/{subjectId}
   if (action === 'subject' && segs.length >= 2) {
     StudyCenter.showSubjectDetail(segs[1]);
+    return;
+  }
+
+  // 新路由：study/prof/{subjectId}/{taskId}
+  if (action === 'prof' && segs.length >= 3) {
+    StudyCenter.showProfTaskDetail(segs[1], segs[2]);
+    return;
+  }
+  // 新路由：study/profsubj/{subjectId}
+  if (action === 'profsubj' && segs.length >= 2) {
+    StudyCenter.showProfSubjectDetail(segs[1]);
     return;
   }
 

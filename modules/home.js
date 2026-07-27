@@ -156,9 +156,11 @@ router.register('home', () => {
 
   // 异步加载各模块数据
   (async () => {
-    const [langSubjects, langTasks, accounts, logs, travels, recipes, ings, museums, relics, works, punchs, interests, pets, dailyTodos] = await Promise.all([
+    const [langSubjects, langTasks, profSubjects, profTasks, accounts, logs, travels, recipes, ings, museums, relics, works, punchs, interests, pets, dailyTodos] = await Promise.all([
       db.all(db.STORES.languageSubject),
       db.all(db.STORES.languageTask),
+      db.all(db.STORES.profSubject),
+      db.all(db.STORES.profTask),
       db.all(db.STORES.account),
       db.all(db.STORES.accountLog),
       db.all(db.STORES.travel),
@@ -178,6 +180,7 @@ router.register('home', () => {
     const today = UI.todayStr();
     const subjectMap = {};
     langSubjects.forEach(s => subjectMap[s.id] = s);
+    profSubjects.forEach(s => subjectMap[s.id] = s);
 
     // 学习：未完成且今日未打卡的语言任务（自动加入今日待办）
     langTasks.filter(t => !t.done).slice(0, 5).forEach(t => {
@@ -188,6 +191,20 @@ router.register('home', () => {
         text: t.content,
         sub: checkedToday ? '今日已打卡' : '今日未打卡',
         route: 'study/lang/' + t.subjectId + '/' + t.id,
+        done: checkedToday,
+        sort: checkedToday ? 2 : 0
+      });
+    });
+
+    // 专业：未完成且今日未打卡的专业任务（自动加入今日待办）
+    profTasks.filter(t => !t.done).slice(0, 5).forEach(t => {
+      const checkedToday = (t.checkins || []).some(c => c.date === today);
+      const subj = subjectMap[t.subjectId];
+      todos.push({
+        icon: subj?.icon || '📑',
+        text: t.content,
+        sub: checkedToday ? '今日已打卡' : '今日未打卡',
+        route: 'study/prof/' + t.subjectId + '/' + t.id,
         done: checkedToday,
         sort: checkedToday ? 2 : 0
       });
