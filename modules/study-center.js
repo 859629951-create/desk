@@ -1284,25 +1284,54 @@ const StudyCenter = {
   renderCourseGrid(courses, weekType) {
     const body = document.getElementById('courseBody');
     if (!body) return;
+
+    // 预处理：为每门课程计算其连续节次区间，用于 rowspan 合并
+    // periods 是节次数组如 [1,2,3]，排序后取最小值作为合并起始行
+    const courseSpanMap = {}; // {courseId: {startRow, span}}
+    courses.forEach(c => {
+      if (!c.periods || c.periods.length === 0) return;
+      // 周类型过滤
+      if (c.weekType !== 'all' && c.weekType !== weekType) return;
+      const sorted = [...c.periods].sort((a, b) => a - b);
+      courseSpanMap[c.id] = { startRow: sorted[0] - 1, span: sorted.length };
+    });
+
+    // 记录哪些格子已被 rowspan 占用（跳过渲染）
+    // key: "day-periodIndex" (periodIndex 0-based)
+    const occupied = new Set();
+
     let html = '';
     for (let p = 0; p < 13; p++) {
       const period = this.periods[p];
       html += `<tr><td class="sc-ct-period"><div class="sc-ct-pn">${period.n}</div><div class="sc-ct-pt">${period.start}</div><div class="sc-ct-pt">${period.end}</div></td>`;
       for (let d = 0; d < 7; d++) {
+        // 如果该格子已被上方 rowspan 占用，跳过
+        if (occupied.has(`${d}-${p}`)) {
+          continue;
+        }
         // 查找该时段该周类型的课程
         const course = courses.find(c => {
           if (c.day !== d) return false;
           if (!c.periods || !c.periods.includes(p + 1)) return false;
-          // 周类型匹配：odd=单周, even=双周, all=每周
           if (c.weekType === 'all') return true;
           return c.weekType === weekType;
         });
         if (course) {
-          html += `<td class="sc-ct-cell has-course" data-cid="${course.id}" data-day="${d}" data-period="${p+1}" style="background:${course.color || 'var(--forest-mist)'};border-color:${course.color || 'var(--forest)'};">
-            <div class="sc-ct-cname">${course.name}</div>
-            ${course.teacher ? `<div class="sc-ct-cteacher">${course.teacher}</div>` : ''}
-            ${course.location ? `<div class="sc-ct-cloc">📍${course.location}</div>` : ''}
-          </td>`;
+          const span = courseSpanMap[course.id];
+          // 只有在合并起始行才渲染该格子，其余行标记为 occupied
+          if (span && span.startRow === p) {
+            const rowspan = span.span;
+            // 标记后续行被占用
+            for (let r = 1; r < rowspan; r++) {
+              occupied.add(`${d}-${p + r}`);
+            }
+            html += `<td class="sc-ct-cell has-course merged" rowspan="${rowspan}" data-cid="${course.id}" data-day="${d}" data-period="${p+1}" style="background:${course.color || 'var(--forest-mist)'};border-color:${course.color || 'var(--forest)'};vertical-align:middle;">
+              <div class="sc-ct-cname">${course.name}</div>
+              ${course.teacher ? `<div class="sc-ct-cteacher">${course.teacher}</div>` : ''}
+              ${course.location ? `<div class="sc-ct-cloc">📍${course.location}</div>` : ''}
+            </td>`;
+          }
+          // 如果不是起始行但课程存在，说明逻辑有问题，跳过（已被 occupied 处理）
         } else {
           html += `<td class="sc-ct-cell" data-day="${d}" data-period="${p+1}"></td>`;
         }
