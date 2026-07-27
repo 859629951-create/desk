@@ -286,7 +286,8 @@ const StudyCenter = {
         <textarea class="field" id="tf_note" placeholder="可选备注" rows="2" maxlength="200"></textarea>
       </div>
       <div class="form-actions">
-        <button class="btn btn-ghost" id="tf_cancel">取消</button>
+        ${isEdit ? '<button class="btn btn-ghost" id="tf_del" style="color:var(--cinnabar);flex:1;">🗑 删除</button>' : ''}
+        <button class="btn btn-ghost" id="tf_cancel">${isEdit ? '取消' : '取消'}</button>
         <button class="btn btn-primary" id="tf_save">${isEdit ? '保存' : '添加任务'}</button>
       </div>
     `;
@@ -301,6 +302,20 @@ const StudyCenter = {
       };
 
       root.querySelector('#tf_cancel').onclick = () => UI.hideSheet();
+
+      // 编辑模式：删除按钮
+      const delBtn = root.querySelector('#tf_del');
+      if (delBtn) {
+        delBtn.onclick = async () => {
+          if (await UI.confirm('确定删除这个学习任务？打卡记录也将删除。')) {
+            await db.remove(db.STORES.languageTask, taskId);
+            UI.hideSheet();
+            UI.toast('已删除');
+            this.showSubjectDetail(subjectId);
+          }
+        };
+      }
+
       root.querySelector('#tf_save').onclick = async () => {
         if (isEdit && !loaded) {
           UI.toast('数据加载中，请稍候');

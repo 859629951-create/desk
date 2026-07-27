@@ -462,22 +462,4 @@ router.register('home', () => {
     }
   })();
 
-  document.getElementById('quoteRefresh').onclick = async () => {
-    const quoteEl = document.getElementById('quoteText');
-    quoteEl.textContent = '✨ 换一条...';
-    try {
-      const prompt = '请随机生成一条经典金句（古今诗词、古文名句或中外哲理格言）。要求：1.积极向上 2.不超过30字 3.标注出处。返回JSON：{"text":"金句","source":"出处"}';
-      const resp = await AI._callOnline(prompt, '');
-      const cleaned = (AI._stripCodeFence ? AI._stripCodeFence(resp) : resp).trim();
-      const match = cleaned.match(/\{[\s\S]*\}/);
-      if (match) {
-        const data = JSON.parse(match[0]);
-        quoteEl.textContent = data.text;
-      } else {
-        quoteEl.textContent = '换个时间再试试';
-      }
-    } catch(e) {
-      quoteEl.textContent = '换个时间再试试';
-    }
-  };
 });
