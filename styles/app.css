@@ -2698,6 +2698,36 @@
 }
 
 /* 课程表 */
+.sc-semester-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--forest-mist);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--ink-line);
+}
+.sc-sem-info {
+  flex: 1;
+  min-width: 0;
+}
+.sc-sem-name {
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--forest);
+  font-weight: 600;
+}
+.sc-sem-detail {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.sc-sem-detail strong {
+  color: var(--gold-deep);
+  font-size: 14px;
+}
 .sc-course-header {
   display: flex;
   justify-content: space-between;

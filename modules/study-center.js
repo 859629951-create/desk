@@ -1,8 +1,8 @@
 /* ============================================
-   学习中心 v3
-   - 语言：多邻国打卡 + 英语学习（时长/背单词/长难句）
+   学习中心 v4
+   - 语言：多邻国打卡 + 自定义语言科目（英语/法语等）+ 学习任务记录
    - 阅读：读书计划 + 文献阅读任务/PDF上传
-   - 研究生：论文进度 + 课程表 + 上课记录 + 思维导图
+   - 研究生：论文进度 + 课程表（学期/当前周）+ 上课记录 + 思维导图
    - 每日新闻热点：DeepSeek API 每天 10 条
    ============================================ */
 
@@ -53,10 +53,16 @@ const StudyCenter = {
     else if (tab === 'news') this.renderNews();
   },
 
+  /* 返回某个 Tab（修复详情页覆盖 appMain 后 scContent 丢失的问题） */
+  goBack(tab) {
+    this.currentTab = tab;
+    this.list();
+  },
+
   /* ====== 语言板块 ====== */
   async renderLanguage() {
     const el = document.getElementById('scContent');
-    App.setFab(null);
+    App.setFab(() => this.addLanguageSubject());
 
     // 多邻国今日打卡状态
     const duolingoLogs = await db.all(db.STORES.duolingo);
@@ -72,14 +78,13 @@ const StudyCenter = {
       d.setDate(d.getDate() - 1);
     }
 
-    // 英语学习记录
-    const englishLogs = await db.all(db.STORES.englishLog);
-    englishLogs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    // 语言科目
+    const subjects = await db.all(db.STORES.languageSubject);
+    subjects.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
-    // 今日英语学习统计
-    const todayLogs = englishLogs.filter(l => l.date === today);
-    const todayMinutes = todayLogs.reduce((a, l) => a + (l.minutes || 0), 0);
-    const todayWords = todayLogs.reduce((a, l) => a + (l.words || 0), 0);
+    // 各科目今日学习统计
+    const allLogs = await db.all(db.STORES.languageLog);
+    const todayLogs = allLogs.filter(l => l.date === today);
 
     el.innerHTML = `
       <!-- 多邻国打卡大按钮 -->
@@ -95,26 +100,12 @@ const StudyCenter = {
         </div>
       </div>
 
-      <!-- 英语学习 -->
-      <div class="section-title">📖 英语学习</div>
-      <div class="sc-en-stats">
-        <div class="sc-en-stat">
-          <div class="sc-en-num">${todayMinutes}</div>
-          <div class="sc-en-label">今日时长(分)</div>
-        </div>
-        <div class="sc-en-stat">
-          <div class="sc-en-num">${todayWords}</div>
-          <div class="sc-en-label">今日背词</div>
-        </div>
-        <div class="sc-en-stat">
-          <div class="sc-en-num">${englishLogs.length}</div>
-          <div class="sc-en-label">总记录</div>
-        </div>
+      <!-- 语言科目 -->
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>📚 语言科目</span>
+        <button class="btn btn-jade" id="addSubject" style="font-size:11px;padding:4px 10px;">＋ 添加科目</button>
       </div>
-
-      <button class="btn btn-primary sc-en-add" id="addEnLog" style="width:100%;margin-bottom:14px;">＋ 记录英语学习</button>
-
-      <div id="enLogList"></div>
+      <div id="subjectList"></div>
     `;
 
     // 多邻国打卡按钮
@@ -128,84 +119,166 @@ const StudyCenter = {
       this.renderLanguage();
     };
 
-    // 英语学习记录按钮
-    document.getElementById('addEnLog').onclick = () => this.addEnglishLog();
-
-    this.renderEnglishLogs(englishLogs);
+    document.getElementById('addSubject').onclick = () => this.addLanguageSubject();
+    this.renderLanguageSubjects(subjects, allLogs, todayLogs);
   },
 
-  async renderEnglishLogs(logs) {
-    const el = document.getElementById('enLogList');
+  async renderLanguageSubjects(subjects, allLogs, todayLogs) {
+    const el = document.getElementById('subjectList');
     if (!el) return;
-    if (logs.length === 0) {
-      el.innerHTML = `<div class="empty"><div class="emoji">📖</div><div class="hint">还没有英语学习记录</div></div>`;
+    if (subjects.length === 0) {
+      el.innerHTML = `<div class="empty"><div class="emoji">🌍</div><div class="hint">添加语言科目（英语、法语、日语等），记录学习进度</div></div>`;
       return;
     }
-    el.innerHTML = logs.slice(0, 30).map(l => `
-      <div class="list-item" data-id="${l.id}">
-        <div class="li-row">
-          <span style="font-size:16px">${l.type === 'words' ? '📝' : l.type === 'sentence' ? '💬' : '⏱️'}</span>
-          <div style="flex:1" data-act="open">
-            <div class="li-title">${l.type === 'words' ? `背词 ${l.words || 0} 个` : l.type === 'sentence' ? '长难句' : `学习 ${l.minutes || 0} 分钟`}</div>
-            ${l.note ? `<div class="li-sub">${l.note}</div>` : ''}
-            <div class="li-tags">
-              <span class="chip gray">${l.date}</span>
-              ${l.minutes ? `<span class="chip blue">⏱️ ${l.minutes}分</span>` : ''}
-              ${l.words ? `<span class="chip green">📝 ${l.words}词</span>` : ''}
+    el.innerHTML = subjects.map(s => {
+      const sLogs = allLogs.filter(l => l.subjectId === s.id);
+      const sTodayLogs = todayLogs.filter(l => l.subjectId === s.id);
+      const todayMin = sTodayLogs.reduce((a, l) => a + (l.minutes || 0), 0);
+      const todayWords = sTodayLogs.reduce((a, l) => a + (l.words || 0), 0);
+      return `
+        <div class="list-item" data-id="${s.id}" style="margin-bottom:10px;">
+          <div class="li-row">
+            <span style="font-size:20px">${s.icon || '📖'}</span>
+            <div style="flex:1" data-act="open">
+              <div class="li-title">${s.name}</div>
+              <div class="li-tags">
+                ${todayMin > 0 ? `<span class="chip blue">⏱️ 今日${todayMin}分</span>` : ''}
+                ${todayWords > 0 ? `<span class="chip green">📝 今日${todayWords}词</span>` : ''}
+                <span class="chip gray">${sLogs.length} 条记录</span>
+              </div>
             </div>
+            <button class="icon-btn" data-act="menu" data-sid="${s.id}" style="width:32px;height:32px;font-size:14px">⋯</button>
           </div>
-          <button class="icon-btn" data-act="del" data-lid="${l.id}" style="width:28px;height:28px;font-size:12px">✕</button>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="btn btn-ghost" data-act="log" data-sid="${s.id}" style="flex:1;font-size:12px;padding:6px;">＋ 记录学习</button>
+            <button class="btn btn-ghost" data-act="view" data-sid="${s.id}" style="flex:1;font-size:12px;padding:6px;">📋 查看记录</button>
+          </div>
         </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
-    el.querySelectorAll('[data-act="del"]').forEach(b => {
-      b.onclick = async (e) => {
-        e.stopPropagation();
-        if (await UI.confirm('删除这条记录？')) {
-          await db.remove(db.STORES.englishLog, b.dataset.lid);
+    el.querySelectorAll('[data-act="menu"]').forEach(b => {
+      b.onclick = (e) => { e.stopPropagation(); this.subjectMenu(b.dataset.sid); };
+    });
+    el.querySelectorAll('[data-act="log"]').forEach(b => {
+      b.onclick = (e) => { e.stopPropagation(); this.addLanguageLog(b.dataset.sid); };
+    });
+    el.querySelectorAll('[data-act="view"]').forEach(b => {
+      b.onclick = (e) => { e.stopPropagation(); this.viewLanguageLogs(b.dataset.sid); };
+    });
+  },
+
+  subjectMenu(id) {
+    const body = `
+      <div class="choice-grid">
+        <button class="choice" data-act="edit">✏️ 编辑</button>
+        <button class="choice" data-act="del" style="color:var(--rust)">🗑 删除</button>
+      </div>
+    `;
+    UI.showSheet('科目操作', body, (root) => {
+      root.querySelector('[data-act="edit"]').onclick = () => { UI.hideSheet(); this.addLanguageSubject(id); };
+      root.querySelector('[data-act="del"]').onclick = async () => {
+        UI.hideSheet();
+        if (await UI.confirm('删除这个科目？相关学习记录也会删除。')) {
+          await db.remove(db.STORES.languageSubject, id);
+          const logs = await db.all(db.STORES.languageLog);
+          for (const l of logs.filter(l => l.subjectId === id)) {
+            await db.remove(db.STORES.languageLog, l.id);
+          }
+          UI.toast('已删除');
           this.renderLanguage();
         }
       };
     });
   },
 
-  addEnglishLog(editId) {
+  addLanguageSubject(editId) {
     const isEdit = !!editId;
+    const icons = ['📖', '🌍', '🇬🇧', '🇫🇷', '🇯🇵', '🇩🇪', '🇪🇸', '🇰🇷', '🇮🇹', '🇷🇺', '🗣️', '✍️'];
+    const body = `
+      <div class="form-row">
+        <label class="label">科目名称</label>
+        <input class="field" id="ls_name" placeholder="如：英语、法语、日语" maxlength="20">
+      </div>
+      <div class="form-row">
+        <label class="label">图标</label>
+        <div class="sc-color-picker" id="ls_icons">
+          ${icons.map((ic, i) => `<label class="sc-cp-item"><input type="radio" name="icon" value="${ic}" ${i === 0 ? 'checked' : ''}><span style="font-size:18px;display:flex;align-items:center;justify-content:center">${ic}</span></label>`).join('')}
+        </div>
+      </div>
+      <div class="form-actions">
+        ${isEdit ? '<button class="btn btn-ghost" id="ls_cancel">取消</button>' : ''}
+        <button class="btn btn-primary" id="ls_save">${isEdit ? '保存' : '添加'}</button>
+      </div>
+    `;
+    UI.showSheet(isEdit ? '编辑科目' : '添加语言科目', body, (root) => {
+      root.querySelector('#ls_save').onclick = async () => {
+        const name = root.querySelector('#ls_name').value.trim();
+        if (!name) return UI.toast('请输入科目名称');
+        const icon = root.querySelector('#ls_icons input:checked').value;
+        if (isEdit) {
+          const old = await db.get(db.STORES.languageSubject, editId);
+          Object.assign(old, { name, icon });
+          await db.put(db.STORES.languageSubject, old);
+        } else {
+          const all = await db.all(db.STORES.languageSubject);
+          await db.add(db.STORES.languageSubject, { name, icon, sortOrder: all.length });
+        }
+        UI.hideSheet();
+        UI.toast(isEdit ? '已保存' : '已添加');
+        this.renderLanguage();
+      };
+      if (isEdit) {
+        (async () => {
+          const s = await db.get(db.STORES.languageSubject, editId);
+          if (s) {
+            root.querySelector('#ls_name').value = s.name || '';
+            const radio = root.querySelector(`#ls_icons input[value="${s.icon}"]`);
+            if (radio) radio.checked = true;
+          }
+        })();
+      }
+    });
+  },
+
+  addLanguageLog(subjectId) {
     const today = UI.todayStr();
     const body = `
       <div class="form-row">
         <label class="label">学习类型</label>
-        <select class="field" id="en_type">
+        <select class="field" id="ll_type">
           <option value="time">⏱️ 学习时长</option>
           <option value="words">📝 背单词</option>
-          <option value="sentence">💬 长难句</option>
+          <option value="sentence">💬 长难句/语法</option>
+          <option value="listening">👂 听力练习</option>
+          <option value="speaking">🗣️ 口语练习</option>
+          <option value="reading">📖 阅读理解</option>
         </select>
       </div>
-      <div class="form-row-2" id="en_num_row">
+      <div class="form-row-2" id="ll_num_row">
         <div>
-          <label class="label" id="en_num_label">学习时长（分钟）</label>
-          <input class="field" id="en_num" type="number" min="0" placeholder="如 45">
+          <label class="label" id="ll_num_label">学习时长（分钟）</label>
+          <input class="field" id="ll_num" type="number" min="0" placeholder="如 45">
         </div>
         <div>
           <label class="label">日期</label>
-          <input class="field" id="en_date" type="date" value="${today}">
+          <input class="field" id="ll_date" type="date" value="${today}">
         </div>
       </div>
       <div class="form-row">
         <label class="label">备注</label>
-        <textarea class="field" id="en_note" placeholder="学习内容、心得..." maxlength="200"></textarea>
+        <textarea class="field" id="ll_note" placeholder="学习内容、心得..." maxlength="200"></textarea>
       </div>
       <div class="form-actions">
-        <button class="btn btn-ghost" id="en_cancel">取消</button>
-        <button class="btn btn-primary" id="en_save">${isEdit ? '保存' : '添加'}</button>
+        <button class="btn btn-ghost" id="ll_cancel">取消</button>
+        <button class="btn btn-primary" id="ll_save">添加</button>
       </div>
     `;
-    UI.showSheet(isEdit ? '编辑英语学习' : '记录英语学习', body, (root) => {
-      const typeSel = root.querySelector('#en_type');
-      const numLabel = root.querySelector('#en_num_label');
-      const numInput = root.querySelector('#en_num');
-      const numRow = root.querySelector('#en_num_row');
+    UI.showSheet('记录学习', body, (root) => {
+      const typeSel = root.querySelector('#ll_type');
+      const numLabel = root.querySelector('#ll_num_label');
+      const numInput = root.querySelector('#ll_num');
+      const numRow = root.querySelector('#ll_num_row');
 
       typeSel.onchange = () => {
         if (typeSel.value === 'time') {
@@ -221,41 +294,83 @@ const StudyCenter = {
         }
       };
 
-      root.querySelector('#en_cancel').onclick = () => UI.hideSheet();
-      root.querySelector('#en_save').onclick = async () => {
+      root.querySelector('#ll_cancel').onclick = () => UI.hideSheet();
+      root.querySelector('#ll_save').onclick = async () => {
         const type = typeSel.value;
-        const date = root.querySelector('#en_date').value;
-        const note = root.querySelector('#en_note').value.trim();
-        const payload = { type, date, note };
+        const date = root.querySelector('#ll_date').value;
+        const note = root.querySelector('#ll_note').value.trim();
+        const payload = { subjectId, type, date, note };
         if (type === 'time') payload.minutes = parseInt(numInput.value) || 0;
         if (type === 'words') payload.words = parseInt(numInput.value) || 0;
-
-        if (isEdit) {
-          const old = await db.get(db.STORES.englishLog, editId);
-          Object.assign(old, payload);
-          await db.put(db.STORES.englishLog, old);
-        } else {
-          await db.add(db.STORES.englishLog, payload);
-        }
+        await db.add(db.STORES.languageLog, payload);
         UI.hideSheet();
-        UI.toast(isEdit ? '已保存' : '已添加');
+        UI.toast('已记录');
         this.renderLanguage();
       };
+    });
+  },
 
-      // 编辑模式加载数据
-      if (isEdit) {
-        (async () => {
-          const l = await db.get(db.STORES.englishLog, editId);
-          if (l) {
-            typeSel.value = l.type || 'time';
-            typeSel.onchange();
-            if (l.type === 'time') numInput.value = l.minutes || '';
-            if (l.type === 'words') numInput.value = l.words || '';
-            root.querySelector('#en_date').value = l.date || today;
-            root.querySelector('#en_note').value = l.note || '';
-          }
-        })();
-      }
+  async viewLanguageLogs(subjectId) {
+    const subject = await db.get(db.STORES.languageSubject, subjectId);
+    const logs = await db.all(db.STORES.languageLog);
+    const sLogs = logs.filter(l => l.subjectId === subjectId).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const main = document.getElementById('appMain');
+
+    const typeLabels = {
+      time: '⏱️ 学习时长', words: '📝 背单词', sentence: '💬 长难句/语法',
+      listening: '👂 听力', speaking: '🗣️ 口语', reading: '📖 阅读'
+    };
+
+    const totalMin = sLogs.reduce((a, l) => a + (l.minutes || 0), 0);
+    const totalWords = sLogs.reduce((a, l) => a + (l.words || 0), 0);
+
+    main.innerHTML = `
+      <div class="fade-up">
+        <button class="detail-back" id="vlBack">‹ 返回</button>
+        <div class="card" style="padding:16px;margin-bottom:14px;">
+          <h2 style="font-family:var(--font-display);font-size:20px;">${subject?.icon || '📖'} ${subject?.name || '科目'}</h2>
+          <div class="li-tags" style="margin-top:8px">
+            <span class="chip blue">⏱️ ${totalMin} 分钟</span>
+            <span class="chip green">📝 ${totalWords} 词</span>
+            <span class="chip gray">${sLogs.length} 条记录</span>
+          </div>
+        </div>
+        <div class="section-title">📋 学习记录</div>
+        <div id="vlList"></div>
+      </div>
+    `;
+    document.getElementById('vlBack').onclick = () => this.goBack('language');
+
+    const listEl = document.getElementById('vlList');
+    if (sLogs.length === 0) {
+      listEl.innerHTML = `<div class="empty"><div class="emoji">📖</div><div class="hint">还没有学习记录</div></div>`;
+      return;
+    }
+    listEl.innerHTML = sLogs.map(l => `
+      <div class="list-item" data-id="${l.id}">
+        <div class="li-row">
+          <span style="font-size:16px">${typeLabels[l.type]?.split(' ')[0] || '📖'}</span>
+          <div style="flex:1">
+            <div class="li-title">${typeLabels[l.type] || '学习'}</div>
+            ${l.note ? `<div class="li-sub">${l.note}</div>` : ''}
+            <div class="li-tags">
+              <span class="chip gray">${l.date}</span>
+              ${l.minutes ? `<span class="chip blue">⏱️ ${l.minutes}分</span>` : ''}
+              ${l.words ? `<span class="chip green">📝 ${l.words}词</span>` : ''}
+            </div>
+          </div>
+          <button class="icon-btn" data-act="del" data-lid="${l.id}" style="width:28px;height:28px;font-size:12px">✕</button>
+        </div>
+      </div>
+    `).join('');
+    listEl.querySelectorAll('[data-act="del"]').forEach(b => {
+      b.onclick = async (e) => {
+        e.stopPropagation();
+        if (await UI.confirm('删除这条记录？')) {
+          await db.remove(db.STORES.languageLog, b.dataset.lid);
+          this.viewLanguageLogs(subjectId);
+        }
+      };
     });
   },
 
@@ -481,7 +596,7 @@ const StudyCenter = {
         <div id="noteList"></div>
       </div>
     `;
-    main.querySelector('[data-act="back"]').onclick = () => this.renderReading();
+    main.querySelector('[data-act="back"]').onclick = () => this.goBack('reading');
     main.querySelector('#editBook').onclick = () => this.addBook(id);
     main.querySelector('#addNote').onclick = () => this.addBookNote(id, 'book');
     this.renderNotes(notes, id, 'book');
@@ -727,7 +842,7 @@ const StudyCenter = {
         <div id="noteList"></div>
       </div>
     `;
-    main.querySelector('[data-act="back"]').onclick = () => this.renderReading();
+    main.querySelector('[data-act="back"]').onclick = () => this.goBack('reading');
     main.querySelector('#editPaper').onclick = () => this.addPaper(id);
     main.querySelector('#addNote').onclick = () => this.addBookNote(id, 'paper');
     this.renderNotes(notes, id, 'paper');
@@ -961,7 +1076,7 @@ const StudyCenter = {
         </div>
       </div>
     `;
-    main.querySelector('[data-act="back"]').onclick = () => this.renderGraduate();
+    main.querySelector('[data-act="back"]').onclick = () => this.goBack('graduate');
     main.querySelector('#editThesis').onclick = () => this.addThesis(id);
   },
 
@@ -995,16 +1110,73 @@ const StudyCenter = {
     { n: 13, start: '20:35', end: '21:20' }
   ],
 
+  /* 计算当前是第几周 */
+  calcCurrentWeek(startDate) {
+    if (!startDate) return 0;
+    const start = new Date(startDate + 'T00:00:00');
+    // 将开始日期调整到那一周的周一
+    const dayOfWeek = start.getDay(); // 0=周日, 1=周一
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const weekStart = new Date(start);
+    weekStart.setDate(start.getDate() + mondayOffset);
+    weekStart.setHours(0, 0, 0, 0);
+
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const diffMs = now - weekStart;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return 0;
+    return Math.floor(diffDays / 7) + 1;
+  },
+
   async showCourseTable() {
     const courses = await db.all(db.STORES.course);
     const main = document.getElementById('appMain');
 
-    // 当前周类型判断（简单：以学期开始日计算）
-    let currentWeekType = localStorage.getItem('courseWeekType') || 'odd';
+    // 获取学期信息
+    const semesters = await db.all(db.STORES.semester);
+    const semester = semesters[0] || null;
+
+    // 计算当前周
+    let currentWeek = 0;
+    let autoWeekType = 'odd';
+    if (semester && semester.startDate) {
+      currentWeek = this.calcCurrentWeek(semester.startDate);
+      if (currentWeek > 0) {
+        autoWeekType = currentWeek % 2 === 1 ? 'odd' : 'even';
+      }
+    }
+
+    // 周类型：优先用 localStorage 手动选择的，否则自动判断
+    let currentWeekType = localStorage.getItem('courseWeekType') || autoWeekType;
+
+    // 当前周类型提示
+    const weekTypeLabel = currentWeek === 0 ? '' : (currentWeek % 2 === 1 ? '（单周）' : '（双周）');
 
     main.innerHTML = `
       <div class="fade-up">
         <button class="detail-back" data-act="back">‹ 返回</button>
+
+        <!-- 学期信息 -->
+        <div class="sc-semester-bar" id="semesterBar">
+          ${semester ? `
+            <div class="sc-sem-info">
+              <div class="sc-sem-name">📅 ${semester.name}</div>
+              <div class="sc-sem-detail">
+                第一周：${semester.startDate}
+                ${currentWeek > 0 ? ` · 当前第 <strong>${currentWeek}</strong> 周${weekTypeLabel}` : ' · 尚未开始'}
+              </div>
+            </div>
+            <button class="icon-btn" id="editSemester" style="font-size:14px;width:32px;height:32px;">✏️</button>
+          ` : `
+            <div class="sc-sem-info">
+              <div class="sc-sem-name">📅 未设置学期</div>
+              <div class="sc-sem-detail">设置学期开始日期后可自动计算当前周次</div>
+            </div>
+            <button class="btn btn-jade" id="editSemester" style="font-size:11px;padding:6px 12px;">设置学期</button>
+          `}
+        </div>
+
         <div class="sc-course-header">
           <div class="sc-course-week-toggle">
             <button class="sc-wt-btn ${currentWeekType === 'odd' ? 'active' : ''}" data-wt="odd">单周</button>
@@ -1032,8 +1204,9 @@ const StudyCenter = {
       </div>
     `;
 
-    main.querySelector('[data-act="back"]').onclick = () => this.renderGraduate();
+    main.querySelector('[data-act="back"]').onclick = () => this.goBack('graduate');
     main.querySelector('#addCourse').onclick = () => this.addCourse();
+    main.querySelector('#editSemester').onclick = () => this.editSemester();
 
     main.querySelectorAll('.sc-wt-btn').forEach(btn => {
       btn.onclick = () => {
@@ -1046,6 +1219,66 @@ const StudyCenter = {
     });
 
     this.renderCourseGrid(courses, currentWeekType);
+  },
+
+  /* 编辑学期信息 */
+  editSemester() {
+    (async () => {
+      const semesters = await db.all(db.STORES.semester);
+      const sem = semesters[0] || {};
+      const today = UI.todayStr();
+      const body = `
+        <div class="form-row">
+          <label class="label">学期名称</label>
+          <input class="field" id="sem_name" placeholder="如：2025春季学期" value="${sem.name || ''}" maxlength="30">
+        </div>
+        <div class="form-row">
+          <label class="label">第一周开始日期</label>
+          <input class="field" type="date" id="sem_start" value="${sem.startDate || today}">
+          <div style="font-size:11px;color:var(--ink-mute);margin-top:4px">从该日期所在周的周一开始计算第几周</div>
+        </div>
+        <div class="form-row">
+          <label class="label">总周数</label>
+          <input class="field" type="number" id="sem_weeks" placeholder="如：20" value="${sem.totalWeeks || ''}" min="1" max="30">
+        </div>
+        <div class="form-actions">
+          ${sem.id ? '<button class="btn btn-ghost" id="sem_del" style="color:var(--rust)">删除</button>' : ''}
+          <button class="btn btn-primary" id="sem_save">保存</button>
+        </div>
+      `;
+      UI.showSheet('学期设置', body, (root) => {
+        root.querySelector('#sem_save').onclick = async () => {
+          const name = root.querySelector('#sem_name').value.trim();
+          const startDate = root.querySelector('#sem_start').value;
+          const totalWeeks = parseInt(root.querySelector('#sem_weeks').value) || 0;
+          if (!name) return UI.toast('请输入学期名称');
+          if (!startDate) return UI.toast('请选择开始日期');
+          if (sem.id) {
+            sem.name = name;
+            sem.startDate = startDate;
+            sem.totalWeeks = totalWeeks;
+            await db.put(db.STORES.semester, sem);
+          } else {
+            await db.add(db.STORES.semester, { name, startDate, totalWeeks });
+          }
+          UI.hideSheet();
+          UI.toast('学期已设置');
+          this.showCourseTable();
+        };
+        const delBtn = root.querySelector('#sem_del');
+        if (delBtn) {
+          delBtn.onclick = async () => {
+            UI.hideSheet();
+            if (await UI.confirm('删除学期信息？')) {
+              await db.remove(db.STORES.semester, sem.id);
+              localStorage.removeItem('courseWeekType');
+              UI.toast('已删除');
+              this.showCourseTable();
+            }
+          };
+        }
+      });
+    })();
   },
 
   renderCourseGrid(courses, weekType) {
@@ -1233,7 +1466,7 @@ const StudyCenter = {
         <div id="classLogList"></div>
       </div>
     `;
-    main.querySelector('[data-act="back"]').onclick = () => this.renderGraduate();
+    main.querySelector('[data-act="back"]').onclick = () => this.goBack('graduate');
     main.querySelector('#addClassLog').onclick = () => this.addClassLog(courses);
     this.renderClassLogs(logs, courses);
   },
@@ -1481,7 +1714,7 @@ const StudyCenter = {
 
       let data = mm.data || { title: '主题', children: [] };
 
-      main.querySelector('[data-act="back"]').onclick = () => this.renderGraduate();
+      main.querySelector('[data-act="back"]').onclick = () => this.goBack('graduate');
 
       // 渲染大纲编辑器
       const renderOutline = () => {

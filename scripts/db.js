@@ -4,7 +4,7 @@
    ============================================ */
 
 const DB_NAME = 'deskDB';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 const STORES = {
   study: 'study', // 学习清单
@@ -26,8 +26,10 @@ const STORES = {
   petMedia: 'petMedia', // 阶段照片
   petExpense: 'petExpense', // 宠物花销
   // ===== 学习中心 v3 新增 =====
+  semester: 'semester', // 学期信息（名称/开始日期）
   duolingo: 'duolingo', // 多邻国打卡记录
-  englishLog: 'englishLog', // 英语学习记录（时长/背单词/长难句）
+  languageSubject: 'languageSubject', // 语言学习科目（英语/法语等）
+  languageLog: 'languageLog', // 语言学习记录
   book: 'book', // 读书计划
   paper: 'paper', // 文献阅读任务
   paperNote: 'paperNote', // 文献笔记（上传的PDF/笔记）
