@@ -178,15 +178,14 @@ const Museum = {
   dynastyOrder: [
     '石器时代', '新石器时代', '夏', '商', '西周', '东周', '春秋', '战国',
     '秦', '西汉', '汉', '东汉', '三国', '魏晋', '南北朝', '隋', '唐',
-    '五代', '十国', '北宋', '辽', '南宋', '金', '元', '明', '清',
-    '近代', '现代', '当代'
+    '五代', '十国', '北宋', '辽', '南宋', '金', '元', '明', '清', '民国', '近代', '现代', '当代'
   ],
 
   getDynastyOrder(dynasty) {
     if (!dynasty) return 999;
     // 处理类似"明代"、"唐朝"等带朝代字的写法
     const cleaned = dynasty.replace(/[朝代时期]/g, '').trim();
-    const idx = this.dynastyOrder.findIndex((d) => cleaned.includes(d));
+    const idx = this.dynastyOrder.findIndex((d) => d.includes(cleaned));
     return idx === -1 ? 999 : idx;
   },
 
