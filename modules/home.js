@@ -157,8 +157,9 @@ router.register('home', () => {
 
   // 异步加载各模块数据
   (async () => {
-    const [studies, accounts, logs, travels, recipes, ings, museums, relics, works, punchs, interests, pets, dailyTodos] = await Promise.all([
-      db.all(db.STORES.study),
+    const [langSubjects, langTasks, accounts, logs, travels, recipes, ings, museums, relics, works, punchs, interests, pets, dailyTodos] = await Promise.all([
+      db.all(db.STORES.languageSubject),
+      db.all(db.STORES.languageTask),
       db.all(db.STORES.account),
       db.all(db.STORES.accountLog),
       db.all(db.STORES.travel),
@@ -176,15 +177,18 @@ router.register('home', () => {
     // 今日待办速览 - 汇总各模块待办
     const todos = [];
     const today = UI.todayStr();
+    const subjectMap = {};
+    langSubjects.forEach(s => subjectMap[s.id] = s);
 
-    // 学习：未完成任务 + 今日未打卡
-    studies.filter((s) => !s.done).slice(0, 3).forEach((s) => {
-      const checkedToday = s.checkins?.some((c) => c.date === today);
+    // 学习：未完成且今日未打卡的语言任务（自动加入今日待办）
+    langTasks.filter(t => !t.done).slice(0, 5).forEach(t => {
+      const checkedToday = (t.checkins || []).some(c => c.date === today);
+      const subj = subjectMap[t.subjectId];
       todos.push({
-        icon: '📚',
-        text: s.title,
+        icon: subj?.icon || '📚',
+        text: t.content,
         sub: checkedToday ? '今日已打卡' : '今日未打卡',
-        route: 'study/detail/' + s.id,
+        route: 'study/lang/' + t.subjectId + '/' + t.id,
         done: checkedToday,
         sort: checkedToday ? 2 : 0
       });
@@ -315,7 +319,7 @@ router.register('home', () => {
     }
 
     // Hero 统计
-    const studyTodo = studies.filter((s) => !s.done).length;
+    const studyTodo = langTasks.filter((t) => !t.done).length;
     const workTodo = works.filter((w) => (w.progress || 0) < 100).length;
     const buyTodo = ings.filter((i) => !i.have).length;
     document.getElementById('heroStats').innerHTML = `
@@ -326,12 +330,12 @@ router.register('home', () => {
       <div class="dh-stat"><span class="num">${buyTodo}</span><span class="label">购物</span></div>
     `;
 
-    // 学习卡片 - 大卡
-    const studyDone = studies.filter((s) => s.done).length;
-    const todayCheckin = studies.filter((s) => s.checkins?.some((c) => c.date === UI.todayStr())).length;
+    // 学习卡片 - 大卡（基于语言任务）
+    const studyDone = langTasks.filter((t) => t.done).length;
+    const todayCheckin = langTasks.filter((t) => (t.checkins || []).some((c) => c.date === UI.todayStr())).length;
     // 计算总连续天数
     const allCheckinDates = new Set();
-    studies.forEach((s) => (s.checkins || []).forEach((c) => allCheckinDates.add(c.date)));
+    langTasks.forEach((t) => (t.checkins || []).forEach((c) => allCheckinDates.add(c.date)));
     let streak = 0;
     let checkDate = new Date();
     while (allCheckinDates.has(UI.formatDate(checkDate.getTime()))) {
@@ -339,7 +343,7 @@ router.register('home', () => {
       checkDate.setDate(checkDate.getDate() - 1);
     }
     document.getElementById('dcStudy').innerHTML = `
-      <div class="dc-lg-num">${studyDone}<span class="dc-lg-unit">/${studies.length}</span></div>
+      <div class="dc-lg-num">${studyDone}<span class="dc-lg-unit">/${langTasks.length}</span></div>
       <div class="dc-lg-sub">已完成任务</div>
       <div class="dc-lg-tags">
         <span class="dc-lg-tag">🔥 连续 ${streak} 天</span>

@@ -1185,9 +1185,6 @@ const Study = {
   }
 };
 
-router.register('study', () => Study.list());
-router.register('study/*', (param) => {
-  const [action, id] = param.split('/');
-  if (action === 'detail' && id) Study.detail(id);
-  else Study.list();
-});
+// 路由已由 StudyCenter 接管，旧 study 模块不再注册路由
+// router.register('study', () => Study.list());
+// router.register('study/*', ...);

@@ -202,6 +202,9 @@ const StudyCenter = {
       listEl.innerHTML = tasks.map(t => {
         const prioColor = prioColorMap[t.priority] || 'var(--ink-mute)';
         const freqLabel = freqLabelMap[t.frequency] || (t.customFreq || '');
+        const tCheckins = t.checkins || [];
+        const tCheckedToday = tCheckins.some(c => c.date === today);
+        const tStreak = this._calcStreak(tCheckins);
         return `
           <div class="list-item" data-tid="${t.id}" style="margin-bottom:8px;cursor:pointer;${t.done ? 'opacity:0.6;' : ''}">
             <div class="li-row">
@@ -211,7 +214,8 @@ const StudyCenter = {
                 <div class="li-title" style="${t.done ? 'text-decoration:line-through;' : ''}">${t.content}</div>
                 <div class="li-tags" style="margin-top:4px">
                   ${freqLabel ? `<span class="chip gray">${freqLabel}</span>` : ''}
-                  ${t.note ? `<span class="chip gray" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.note}">${t.note}</span>` : ''}
+                  ${tStreak > 0 ? `<span class="chip yellow">🔥${tStreak}</span>` : ''}
+                  ${tCheckedToday ? '<span class="chip green">✓ 今日已打卡</span>' : ''}
                 </div>
               </div>
             </div>
@@ -246,7 +250,8 @@ const StudyCenter = {
     renderTasks();
   },
 
-  showTaskDetail(subjectId, taskId) {
+  /* 任务编辑弹窗（新建/编辑共用） */
+  _showTaskEditor(subjectId, taskId) {
     const isEdit = !!taskId;
     const body = `
       <div class="form-row">
@@ -316,7 +321,7 @@ const StudyCenter = {
           await db.put(db.STORES.languageTask, task);
         } else {
           await db.add(db.STORES.languageTask, {
-            subjectId, content, frequency, customFreq, note, priority, done: false
+            subjectId, content, frequency, customFreq, note, priority, done: false, checkins: []
           });
         }
         UI.hideSheet();
@@ -341,6 +346,317 @@ const StudyCenter = {
         })();
       }
     });
+  },
+
+  /* ====== 打卡相关工具方法（从 Study 迁移） ====== */
+  _badges: [
+    { days: 3, icon: '🌱', name: '初芽', desc: '连续打卡 3 天' },
+    { days: 7, icon: '🌿', name: '青苗', desc: '连续打卡 7 天' },
+    { days: 14, icon: '🌳', name: '成树', desc: '连续打卡 14 天' },
+    { days: 30, icon: '🏆', name: '坚持', desc: '连续打卡 30 天' },
+    { days: 60, icon: '👑', name: '王者', desc: '连续打卡 60 天' },
+    { days: 100, icon: '💎', name: '传奇', desc: '连续打卡 100 天' }
+  ],
+
+  _calcStreak(checkins) {
+    if (!checkins || !checkins.length) return 0;
+    const dates = new Set(checkins.map(c => c.date));
+    let streak = 0;
+    const d = new Date();
+    if (!dates.has(UI.formatDate(d.getTime()))) d.setDate(d.getDate() - 1);
+    while (dates.has(UI.formatDate(d.getTime()))) {
+      streak++;
+      d.setDate(d.getDate() - 1);
+    }
+    return streak;
+  },
+
+  _calcMaxStreak(checkins) {
+    if (!checkins || !checkins.length) return 0;
+    const dates = checkins.map(c => c.date).sort();
+    let max = 1, cur = 1;
+    for (let i = 1; i < dates.length; i++) {
+      const prev = new Date(dates[i - 1]);
+      prev.setDate(prev.getDate() + 1);
+      if (UI.formatDate(prev.getTime()) === dates[i]) {
+        cur++;
+        max = Math.max(max, cur);
+      } else {
+        cur = 1;
+      }
+    }
+    return max;
+  },
+
+  _unlockedBadges(streak, maxStreak) {
+    const best = Math.max(streak, maxStreak);
+    return this._badges.filter(b => best >= b.days);
+  },
+
+  _isCheckedToday(checkins, frequency) {
+    const today = UI.todayStr();
+    if (!frequency || frequency === '每天') {
+      return checkins?.some(c => c.date === today);
+    }
+    if (frequency === '每周') {
+      const now = new Date();
+      const dayOfWeek = now.getDay() === 0 ? 6 : now.getDay() - 1;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - dayOfWeek);
+      const mondayStr = UI.formatDate(monday.getTime());
+      return checkins?.some(c => c.date >= mondayStr && c.date <= today);
+    }
+    // 自定义频次：只要今天打过卡就算
+    return checkins?.some(c => c.date === today);
+  },
+
+  /* ====== 任务详情页（全屏，含打卡/徽章/日历/记录） ====== */
+  async showTaskDetail(subjectId, taskId) {
+    // 如果 taskId 为 null，走编辑弹窗新建
+    if (!taskId) {
+      this._showTaskEditor(subjectId, null);
+      return;
+    }
+
+    const task = await db.get(db.STORES.languageTask, taskId);
+    if (!task) return;
+    const subject = await db.get(db.STORES.languageSubject, subjectId);
+    const checkins = task.checkins || [];
+    const streak = this._calcStreak(checkins);
+    const maxStreak = this._calcMaxStreak(checkins);
+    const unlocked = this._unlockedBadges(streak, maxStreak);
+    const checkedToday = this._isCheckedToday(checkins, task.frequency);
+    const today = UI.todayStr();
+
+    const main = document.getElementById('appMain');
+    App.setFab(() => this._showTaskEditor(subjectId, taskId));
+
+    main.innerHTML = `
+      <div class="fade-up">
+        <button class="detail-back" id="tdBack">‹ 返回</button>
+        <div class="card" style="padding:16px;margin-bottom:14px;">
+          <div class="tape green" style="top:-8px;left:20px;"></div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+            <span class="chip blue">${subject?.icon || '📖'} ${subject?.name || '科目'}</span>
+            <span class="chip ${task.priority === '高' ? 'red' : task.priority === '中' ? 'yellow' : 'gray'}">${task.priority === '高' ? '🔴' : task.priority === '中' ? '🟡' : '⚪'} ${task.priority || '中'}</span>
+            <span class="chip gray">${task.frequency === '每天' ? '📅 每天' : task.frequency === '每周' ? '📆 每周' : '⚙️ ' + (task.customFreq || '自定义')}</span>
+            ${task.done ? '<span class="chip green">已完成</span>' : ''}
+          </div>
+          <h2 style="font-family:var(--font-display);font-size:22px;color:var(--ink);margin-bottom:6px">${task.content}</h2>
+          ${task.note ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:6px;line-height:1.6">${task.note}</div>` : ''}
+          <div style="display:flex;gap:8px;margin-top:14px;">
+            <button class="btn btn-primary" id="tdCheckin" style="flex:1${checkedToday ? ';opacity:0.6' : ''}" ${checkedToday ? 'disabled' : ''}>${checkedToday ? '✓ 今日已打卡' : '📅 立即打卡'}</button>
+            <button class="btn btn-ghost" id="tdEdit" style="flex:1">✏️ 编辑</button>
+          </div>
+        </div>
+
+        <!-- 连续打卡状态 -->
+        <div class="study-streak-box">
+          <div class="ssb-main">
+            <div class="ssb-streak">
+              <span class="ssb-fire">🔥</span>
+              <div>
+                <div class="ssb-num">${streak}</div>
+                <div class="ssb-label">当前连续</div>
+              </div>
+            </div>
+            <div class="ssb-max">
+              <div class="ssb-max-num">${maxStreak}</div>
+              <div class="ssb-max-label">历史最长</div>
+            </div>
+          </div>
+          <div class="ssb-progress">${this._renderStreakBar(streak, maxStreak)}</div>
+        </div>
+
+        <!-- 成就徽章 -->
+        <div class="section-title">🎖️ 成就徽章</div>
+        <div class="badge-row">${this._renderBadges(unlocked)}</div>
+
+        <!-- 打卡日历 -->
+        <div class="section-title">📅 打卡日历</div>
+        <div class="card" style="padding:14px;" id="tdCalendar"></div>
+
+        <!-- 打卡记录 -->
+        <div class="section-title">📝 打卡记录</div>
+        <div id="tdCheckinList"></div>
+
+        <div style="height:20px"></div>
+      </div>
+    `;
+
+    document.getElementById('tdBack').onclick = () => this.showSubjectDetail(subjectId);
+    document.getElementById('tdEdit').onclick = () => this._showTaskEditor(subjectId, taskId);
+
+    // 打卡按钮
+    if (!checkedToday) {
+      document.getElementById('tdCheckin').onclick = () => this._doCheckin(taskId, subjectId);
+    }
+
+    // 渲染日历
+    this._renderCalendar(checkins);
+    // 渲染打卡记录
+    this._renderCheckinList(checkins);
+  },
+
+  /* 打卡操作 */
+  async _doCheckin(taskId, subjectId) {
+    const task = await db.get(db.STORES.languageTask, taskId);
+    if (!task) return;
+    const today = UI.todayStr();
+
+    const body = `
+      <div style="text-align:center;margin-bottom:14px">
+        <div style="font-size:40px">🎉</div>
+        <div style="font-family:var(--font-display);font-size:18px;color:var(--ink);margin-top:6px">${today} 打卡</div>
+        <div style="font-size:12px;color:var(--ink-mute);margin-top:2px">${task.content}</div>
+      </div>
+      <div class="form-row-2">
+        <div>
+          <label class="label">学习时长</label>
+          <input class="field" id="tc_dur" placeholder="如 45 分钟">
+        </div>
+        <div>
+          <label class="label">心情</label>
+          <select class="field" id="tc_mood">
+            <option>😊 充实</option>
+            <option>😌 平静</option>
+            <option>🤔 思考</option>
+            <option>😴 疲惫</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="label">今日收获（可选）</label>
+        <textarea class="field" id="tc_note" placeholder="学到了什么？" maxlength="200"></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" id="tc_cancel">取消</button>
+        <button class="btn btn-primary" id="tc_save">✓ 确认打卡</button>
+      </div>
+    `;
+    UI.showSheet('学习打卡', body, (root) => {
+      root.querySelector('#tc_cancel').onclick = () => UI.hideSheet();
+      root.querySelector('#tc_save').onclick = async () => {
+        task.checkins = task.checkins || [];
+        task.checkins.push({
+          date: today,
+          duration: root.querySelector('#tc_dur').value.trim(),
+          mood: root.querySelector('#tc_mood').value,
+          note: root.querySelector('#tc_note').value.trim()
+        });
+        await db.put(db.STORES.languageTask, task);
+
+        // 检查是否解锁新徽章
+        const newStreak = this._calcStreak(task.checkins);
+        const newMax = this._calcMaxStreak(task.checkins);
+        const best = Math.max(newStreak, newMax);
+        const justUnlocked = this._badges.find(b => b.days === best);
+
+        UI.hideSheet();
+        if (justUnlocked) {
+          UI.toast(`🎖️ 解锁徽章：${justUnlocked.icon} ${justUnlocked.name}！`);
+        } else {
+          UI.toast('打卡成功，继续加油！');
+        }
+        this.showTaskDetail(subjectId, taskId);
+      };
+    });
+  },
+
+  /* 渲染徽章墙 */
+  _renderBadges(unlocked) {
+    const unlockedSet = new Set(unlocked.map(b => b.days));
+    return this._badges.map(b => {
+      const isUnlocked = unlockedSet.has(b.days);
+      return `
+        <div class="badge ${isUnlocked ? 'unlocked' : ''}">
+          <div class="b-circle">${b.icon}</div>
+          <div class="b-name">${b.name}</div>
+          <div class="b-desc">${b.days}天</div>
+        </div>`;
+    }).join('');
+  },
+
+  /* 渲染连续打卡进度条 */
+  _renderStreakBar(streak, maxStreak) {
+    const best = Math.max(streak, maxStreak);
+    let nextBadge = this._badges.find(b => b.days > best);
+    let prevDays = 0;
+    if (nextBadge) {
+      const idx = this._badges.indexOf(nextBadge);
+      prevDays = idx > 0 ? this._badges[idx - 1].days : 0;
+    } else {
+      nextBadge = this._badges[this._badges.length - 1];
+      prevDays = this._badges[this._badges.length - 2]?.days || 0;
+    }
+    const range = nextBadge.days - prevDays;
+    const cur = Math.min(best, nextBadge.days) - prevDays;
+    const pct = range > 0 ? Math.round((cur / range) * 100) : 100;
+
+    if (best >= this._badges[this._badges.length - 1].days) {
+      return `<div class="ssb-bar-track"><div class="ssb-bar-fill" style="width:100%"></div></div>
+              <div class="ssb-bar-text">已达最高徽章 💎 传奇</div>`;
+    }
+    return `<div class="ssb-bar-track"><div class="ssb-bar-fill" style="width:${pct}%"></div></div>
+            <div class="ssb-bar-text">距下一徽章 ${nextBadge.icon} ${nextBadge.name} 还需 ${nextBadge.days - best} 天</div>`;
+  },
+
+  /* 渲染打卡日历 */
+  _renderCalendar(checkins) {
+    const box = document.getElementById('tdCalendar');
+    if (!box) return;
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const days = new Date(year, month + 1, 0).getDate();
+    const checkinDates = new Set(checkins.map(c => c.date));
+
+    let html = `<div style="text-align:center;font-family:var(--font-display);font-size:16px;margin-bottom:10px;color:var(--ink)">${year}年 ${month + 1}月</div>`;
+    html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center;">';
+    ['日', '一', '二', '三', '四', '五', '六'].forEach(d => {
+      html += `<div style="font-size:11px;color:var(--ink-mute);padding:4px 0;">${d}</div>`;
+    });
+    for (let i = 0; i < firstDay; i++) html += '<div></div>';
+    for (let d = 1; d <= days; d++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const checked = checkinDates.has(dateStr);
+      const isToday = dateStr === UI.todayStr();
+      html += `<div style="
+        aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+        font-size:12px; border-radius:50%;
+        background: ${checked ? 'var(--forest)' : isToday ? 'var(--paper-deep)' : 'transparent'};
+        color: ${checked ? 'var(--paper-light)' : 'var(--ink)'};
+        border: ${isToday && !checked ? '1.5px solid var(--forest)' : 'none'};
+        font-weight: ${isToday ? '700' : '400'};
+      ">${d}</div>`;
+    }
+    html += '</div>';
+    html += `<div style="font-size:11px;color:var(--ink-mute);margin-top:10px;text-align:center;">本月已打卡 ${[...checkinDates].filter(d => d.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`)).length} 天</div>`;
+    box.innerHTML = html;
+  },
+
+  /* 渲染打卡记录列表 */
+  _renderCheckinList(checkins) {
+    const el = document.getElementById('tdCheckinList');
+    if (!el) return;
+    const sorted = (checkins || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+    if (sorted.length === 0) {
+      el.innerHTML = `<div class="empty"><div class="emoji">🌱</div><div class="hint">还没有打卡记录，开始第一步吧</div></div>`;
+      return;
+    }
+    el.innerHTML = sorted.map(c => `
+      <div class="list-item">
+        <div class="li-row">
+          <span style="font-size:18px">✅</span>
+          <div style="flex:1">
+            <div class="li-title" style="font-size:14px">${c.date}</div>
+            ${c.note ? `<div class="li-sub">${c.note}</div>` : ''}
+          </div>
+          <span class="chip green">${c.duration || ''}</span>
+        </div>
+      </div>
+    `).join('');
   },
 
   subjectMenu(id) {
@@ -2419,17 +2735,116 @@ const StudyCenter = {
       console.error('获取新闻失败', e);
       UI.toast('获取新闻失败：' + (e.message || '网络错误'));
     }
+  },
+
+  /* ====== 旧学习数据迁移 ====== */
+  async migrateOldStudyData() {
+    const MIGRATE_FLAG = '_studyMigrated_v1';
+    if (localStorage.getItem(MIGRATE_FLAG)) return 'already';
+
+    const oldTasks = await db.all(db.STORES.study);
+    if (!oldTasks.length) {
+      localStorage.setItem(MIGRATE_FLAG, '1');
+      return 'empty';
+    }
+
+    const iconMap = {
+      'LEC 法律英语': '⚖️', '法语': '🇫🇷', '商法学': '📑', '民法学': '📑',
+      '其他': '📖'
+    };
+
+    // 收集所有学科
+    const subjectNames = [...new Set(oldTasks.map(t => t.subject || '其他'))];
+    const subjectIdMap = {};
+    let sortOrder = 0;
+
+    for (const name of subjectNames) {
+      // 检查是否已存在同名科目
+      const existing = await db.query(db.STORES.languageSubject, s => s.name === name);
+      if (existing.length > 0) {
+        subjectIdMap[name] = existing[0].id;
+      } else {
+        const subj = await db.add(db.STORES.languageSubject, {
+          name,
+          icon: iconMap[name] || '📖',
+          sortOrder: sortOrder++
+        });
+        subjectIdMap[name] = subj.id;
+      }
+    }
+
+    // 迁移任务
+    let migrated = 0;
+    for (const old of oldTasks) {
+      const subjectId = subjectIdMap[old.subject || '其他'];
+      if (!subjectId) continue;
+
+      // 转换频次
+      let frequency = '每天';
+      if (old.frequency) {
+        if (old.frequency.type === 'daily') frequency = '每天';
+        else if (old.frequency.type === 'weekly') frequency = '每周';
+        else if (old.frequency.type === 'once') frequency = '每天';
+        else if (old.frequency.type === 'custom') frequency = '自定义';
+      }
+
+      const task = await db.add(db.STORES.languageTask, {
+        subjectId,
+        content: old.title || '未命名任务',
+        note: old.note || '',
+        priority: '中',
+        frequency,
+        customFreq: old.frequency?.type === 'custom' ? `每${old.frequency.days || 1}天` : '',
+        done: old.done || false,
+        checkins: (old.checkins || []).map(c => ({
+          date: c.date,
+          duration: c.duration || '',
+          mood: c.mood || '',
+          note: c.note || ''
+        })),
+        createdAt: old.createdAt || Date.now()
+      });
+      migrated++;
+    }
+
+    localStorage.setItem(MIGRATE_FLAG, '1');
+    return `migrated ${migrated} tasks from ${subjectNames.length} subjects`;
   }
 };
 
 router.register('study', () => StudyCenter.list());
 router.register('study/*', (param) => {
-  const [action, id] = param.split('/');
-  if (action === 'detail' && id) {
-    // 兼容旧的学习任务详情路由
-    Study.detail(id);
-  } else {
-    StudyCenter.list();
+  const segs = param.split('/');
+  const action = segs[0];
+
+  // 新路由：study/lang/{subjectId}/{taskId}
+  if (action === 'lang' && segs.length >= 3) {
+    const subjectId = segs[1];
+    const taskId = segs[2];
+    StudyCenter.showTaskDetail(subjectId, taskId);
+    return;
+  }
+
+  // 新路由：study/subject/{subjectId}
+  if (action === 'subject' && segs.length >= 2) {
+    StudyCenter.showSubjectDetail(segs[1]);
+    return;
+  }
+
+  // 兼容旧的学习任务详情路由（重定向到学习中心）
+  if (action === 'detail' && segs[1]) {
+    // 旧 study 数据已被迁移，引导用户去学习中心
+    router.navigate('study');
+    return;
+  }
+
+  StudyCenter.list();
+});
+
+// 首次加载时自动执行迁移
+StudyCenter.migrateOldStudyData().then(result => {
+  if (result && result !== 'already' && result !== 'empty') {
+    console.log('[StudyCenter] 旧数据迁移完成:', result);
   }
 });
 
