@@ -2204,10 +2204,10 @@ const StudyCenter = {
             for (let r = 1; r < rowspan; r++) {
               occupied.add(`${d}-${p + r}`);
             }
-            html += `<td class="sc-ct-cell has-course merged" rowspan="${rowspan}" data-cid="${course.id}" data-day="${d}" data-period="${p+1}" style="background:${course.color || 'var(--forest-mist)'};border-color:${course.color || 'var(--forest)'};vertical-align:middle;">
-              <div class="sc-ct-cname">${course.name}</div>
-              ${course.teacher ? `<div class="sc-ct-cteacher">${course.teacher}</div>` : ''}
-              ${course.location ? `<div class="sc-ct-cloc">📍${course.location}</div>` : ''}
+            html += `<td class="sc-ct-cell has-course merged" rowspan="${rowspan}" data-cid="${course.id}" data-day="${d}" data-period="${p+1}" style="background:${course.color || 'var(--forest-mist)'};border-color:${course.color || 'var(--forest)'};vertical-align:middle;color:${this._contrastTextColor(course.color || '#2f4a28')};">
+              <div class="sc-ct-cname" style="color:inherit;">${course.name}</div>
+              ${course.teacher ? `<div class="sc-ct-cteacher" style="color:inherit;">${course.teacher}</div>` : ''}
+              ${course.location ? `<div class="sc-ct-cloc" style="color:inherit;">📍${course.location}</div>` : ''}
             </td>`;
           }
           // 如果不是起始行但课程存在，说明逻辑有问题，跳过（已被 occupied 处理）
@@ -2378,88 +2378,82 @@ const StudyCenter = {
 
   /* 初始化色轮 */
   _initHueWheel(container, size, onPick) {
+    const dpr = window.devicePixelRatio || 1;
     const canvas = document.createElement('canvas');
-    canvas.width = size * 2; canvas.height = size * 2;
-    canvas.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;cursor:crosshair;display:block;`;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    canvas.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;cursor:crosshair;display:block;touch-action:none;`;
     container.appendChild(canvas);
     const ctx = canvas.getContext('2d');
-    const cx = size, cy = size, r = size - 8;
+    ctx.scale(dpr, dpr);
+    const cx = size / 2, cy = size / 2;
+    const outerR = size / 2 - 4;
+    const innerR = outerR * 0.45;
 
-    // 画色轮
+    // 用离屏 canvas 缓存色轮，避免每次 pick 重绘
+    const offscreen = document.createElement('canvas');
+    offscreen.width = canvas.width;
+    offscreen.height = canvas.height;
+    const oCtx = offscreen.getContext('2d');
+    oCtx.scale(dpr, dpr);
     for (let angle = 0; angle < 360; angle++) {
-      const startAngle = (angle - 1) * Math.PI / 180;
-      const endAngle = (angle + 1) * Math.PI / 180;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, r, startAngle, endAngle);
-      ctx.closePath();
-      ctx.fillStyle = `hsl(${angle}, 55%, 38%)`;
-      ctx.fill();
+      const sa = (angle - 1) * Math.PI / 180;
+      const ea = (angle + 1) * Math.PI / 180;
+      oCtx.beginPath();
+      oCtx.moveTo(cx, cy);
+      oCtx.arc(cx, cy, outerR, sa, ea);
+      oCtx.closePath();
+      oCtx.fillStyle = `hsl(${angle}, 55%, 38%)`;
+      oCtx.fill();
     }
-    // 中间挖白圆
-    ctx.beginPath();
-    ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2);
-    ctx.fillStyle = '#faf5ec';
-    ctx.fill();
+    oCtx.beginPath();
+    oCtx.arc(cx, cy, innerR, 0, Math.PI * 2);
+    oCtx.fillStyle = '#faf5ec';
+    oCtx.fill();
 
-    // 画指示点
-    let indicatorAngle = 150; // 默认 ~#2f4a28
-    function drawIndicator(hue) {
-      const a = (hue - 90) * Math.PI / 180;
-      const ir = r * 0.72;
+    let currentHue = 150;
+    let dragging = false;
+
+    function draw() {
+      ctx.clearRect(0, 0, size, size);
+      ctx.drawImage(offscreen, 0, 0, size, size);
+      // 指示点
+      const a = (currentHue - 90) * Math.PI / 180;
+      const ir = (outerR + innerR) / 2;
       const ix = cx + ir * Math.cos(a);
       const iy = cy + ir * Math.sin(a);
       ctx.beginPath();
-      ctx.arc(ix, iy, 7, 0, Math.PI * 2);
+      ctx.arc(ix, iy, 6, 0, Math.PI * 2);
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2.5;
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(ix, iy, 7, 0, Math.PI * 2);
+      ctx.arc(ix, iy, 6, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(0,0,0,0.3)';
       ctx.lineWidth = 1;
       ctx.stroke();
     }
-    // 初始绘制完整色轮 + 指示器
-    function redrawWheel() {
-      for (let angle = 0; angle < 360; angle++) {
-        const startAngle = (angle - 1) * Math.PI / 180;
-        const endAngle = (angle + 1) * Math.PI / 180;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.arc(cx, cy, r, startAngle, endAngle);
-        ctx.closePath();
-        ctx.fillStyle = `hsl(${angle}, 55%, 38%)`;
-        ctx.fill();
-      }
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2);
-      ctx.fillStyle = '#faf5ec';
-      ctx.fill();
-    }
-    redrawWheel();
-    drawIndicator(indicatorAngle);
+    draw();
 
-    // 点击选色
-    function pick(e) {
+    function pick(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
-      const x = (e.clientX || e.touches[0].clientX) - rect.left - rect.width / 2;
-      const y = (e.clientY || e.touches[0].clientY) - rect.top - rect.height / 2;
+      const x = clientX - rect.left - rect.width / 2;
+      const y = clientY - rect.top - rect.height / 2;
+      const dist = Math.sqrt(x * x + y * y) / (rect.width / 2);
+      if (dist < 0.45 || dist > 1.05) return;
       let angle = Math.atan2(y, x) * 180 / Math.PI + 90;
       if (angle < 0) angle += 360;
-      const dist = Math.sqrt(x * x + y * y);
-      const maxDist = r * 0.45 / (rect.width / 2) * canvas.width / 2;
-      const minDist = r * 0.45 / (rect.width / 2) * canvas.width / 2;
-      // 只响应色环区域点击
-      const normDist = dist / (rect.width / 2);
-      if (normDist < 0.45 || normDist > 1) return;
-      indicatorAngle = angle;
-      redrawWheel();
-      drawIndicator(indicatorAngle);
-      onPick(Math.round(angle));
+      currentHue = Math.round(angle);
+      draw();
+      onPick(currentHue);
     }
-    canvas.addEventListener('click', pick);
-    canvas.addEventListener('touchend', (e) => { e.preventDefault(); pick(e); });
+
+    canvas.addEventListener('mousedown', (e) => { dragging = true; pick(e.clientX, e.clientY); });
+    canvas.addEventListener('mousemove', (e) => { if (dragging) pick(e.clientX, e.clientY); });
+    window.addEventListener('mouseup', () => { dragging = false; });
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); dragging = true; pick(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); if (dragging) pick(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+    canvas.addEventListener('touchend', () => { dragging = false; });
   },
 
   /* HSL 转 HEX */
@@ -2472,6 +2466,19 @@ const StudyCenter = {
       return Math.round(255 * color).toString(16).padStart(2, '0');
     };
     return `#${f(0)}${f(8)}${f(4)}`;
+  },
+
+  /* 根据背景色计算对比文字颜色（深背景用白字，浅背景用黑字） */
+  _contrastTextColor(hex) {
+    if (!hex || hex.startsWith('var(')) return '#fff';
+    const c = hex.replace('#', '');
+    if (c.length < 6) return '#fff';
+    const r = parseInt(c.substring(0, 2), 16);
+    const g = parseInt(c.substring(2, 4), 16);
+    const b = parseInt(c.substring(4, 6), 16);
+    // 相对亮度
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    return lum > 150 ? '#1a1a1a' : '#ffffff';
   },
 
   /* 上课记录 */
