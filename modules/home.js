@@ -36,7 +36,6 @@ router.register('home', () => {
         </div>
         <div class="dh-quote" id="dailyQuoteBar">
           <span class="dh-quote-text" id="quoteText">加载中...</span>
-          <button class="dh-quote-refresh" id="quoteRefresh" title="换一条">🔄</button>
         </div>
       </div>
 

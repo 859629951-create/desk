@@ -190,6 +190,7 @@ const StudyCenter = {
     // 设置 FAB 用于添加任务
     App.setFab(() => this.showTaskDetail(subjectId, null));
 
+    const today = UI.todayStr();
     const renderTasks = () => {
       const listEl = document.getElementById('taskList');
       if (!listEl) return;
