@@ -4,7 +4,7 @@
    ============================================ */
 
 const DB_NAME = 'deskDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 const STORES = {
   study: 'study', // 学习清单
@@ -24,7 +24,23 @@ const STORES = {
   petWeight: 'petWeight', // 体重记录
   petHealth: 'petHealth', // 健康/医疗记录（疫苗/驱虫/洗澡/症状/手术/就医/喂养）
   petMedia: 'petMedia', // 阶段照片
-  petExpense: 'petExpense' // 宠物花销
+  petExpense: 'petExpense', // 宠物花销
+  // ===== 学习中心 v3 新增 =====
+  duolingo: 'duolingo', // 多邻国打卡记录
+  englishLog: 'englishLog', // 英语学习记录（时长/背单词/长难句）
+  book: 'book', // 读书计划
+  paper: 'paper', // 文献阅读任务
+  paperNote: 'paperNote', // 文献笔记（上传的PDF/笔记）
+  thesis: 'thesis', // 论文进度
+  course: 'course', // 课程表
+  classLog: 'classLog', // 上课记录（日期/内容/作业/考勤）
+  mindmap: 'mindmap', // 思维导图（大纲）
+  news: 'news', // 每日新闻热点缓存
+  // ===== 旅行计划 =====
+  travelPlan: 'travelPlan', // 旅行行程计划（多天行程项）
+  // ===== 存钱罐 =====
+  savings: 'savings', // 存钱罐
+  savingsLog: 'savingsLog' // 存钱罐存入/取出记录
 };
 
 let _db = null;

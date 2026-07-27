@@ -405,6 +405,13 @@ const Travel = {
         <div class="section-title">📷 风景照片（${t.photos?.length || 0}）</div>
         <div class="img-grid" id="photoGrid"></div>
 
+        <!-- 旅行计划 -->
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>🗺️ 旅行计划</span>
+          <button class="btn btn-jade" id="addPlanDay" style="font-size:11px;padding:4px 10px;">＋ 添加天</button>
+        </div>
+        <div id="travelPlanList"></div>
+
         ${t.done ? `
           <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
             <span>📖 旅行手账（${journal.length}）</span>
@@ -423,6 +430,10 @@ const Travel = {
       this.detail(id);
     };
     this.renderPhotos(t);
+
+    // 旅行计划
+    this.renderTravelPlan(t);
+    main.querySelector('#addPlanDay').onclick = () => this.addPlanDay(id);
 
     // 旅行手账
     if (t.done) {
@@ -706,6 +717,165 @@ const Travel = {
     await db.put(db.STORES.travel, t);
     this.renderPhotos(t);
     UI.toast('已上传 ' + imgs.length + ' 张照片');
+  },
+
+  /* ====== 旅行计划 ====== */
+  async renderTravelPlan(t) {
+    const el = document.getElementById('travelPlanList');
+    if (!el) return;
+    const plans = await db.query(db.STORES.travelPlan, p => p.travelId === t.id);
+    plans.sort((a, b) => (a.day || 0) - (b.day || 0));
+
+    if (plans.length === 0) {
+      el.innerHTML = `<div class="empty"><div class="emoji">🗺️</div><div class="hint">添加行程计划，安排每天的景点和美食</div></div>`;
+      return;
+    }
+
+    el.innerHTML = plans.map(p => `
+      <div class="travel-plan-day" data-id="${p.id}">
+        <div class="tpd-head" data-act="toggle-day" data-pid="${p.id}">
+          <span class="tpd-title">📅 第 ${p.day} 天${p.date ? ' · ' + p.date : ''}</span>
+          <div>
+            <button class="icon-btn" data-act="add-plan-item" data-pid="${p.id}" style="width:28px;height:28px;font-size:14px">＋</button>
+            <button class="icon-btn" data-act="del-day" data-pid="${p.id}" style="width:28px;height:28px;font-size:12px;color:var(--rust)">✕</button>
+          </div>
+        </div>
+        <div class="tpd-body" id="tpdBody_${p.id}">
+          ${this.renderPlanItems(p.items || [], p.id)}
+        </div>
+      </div>
+    `).join('');
+
+    // 绑定事件
+    el.querySelectorAll('[data-act="add-plan-item"]').forEach(b => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        this.addPlanItem(t.id, b.dataset.pid);
+      };
+    });
+    el.querySelectorAll('[data-act="del-day"]').forEach(b => {
+      b.onclick = async (e) => {
+        e.stopPropagation();
+        if (await UI.confirm('删除这一天的行程？')) {
+          await db.remove(db.STORES.travelPlan, b.dataset.pid);
+          this.renderTravelPlan(t);
+        }
+      };
+    });
+    el.querySelectorAll('[data-act="del-item"]').forEach(b => {
+      b.onclick = async (e) => {
+        e.stopPropagation();
+        const pid = b.dataset.pid;
+        const idx = parseInt(b.dataset.idx);
+        const plan = await db.get(db.STORES.travelPlan, pid);
+        if (plan && plan.items) {
+          plan.items.splice(idx, 1);
+          await db.put(db.STORES.travelPlan, plan);
+          this.renderTravelPlan(t);
+        }
+      };
+    });
+  },
+
+  renderPlanItems(items, planId) {
+    if (!items || items.length === 0) {
+      return `<div style="font-size:12px;color:var(--ink-mute);padding:8px 0;">暂无行程项，点击 ＋ 添加</div>`;
+    }
+    return items.map((item, i) => `
+      <div class="travel-plan-item">
+        <div class="tpi-type ${item.type === 'food' ? 'food' : 'scenic'}">
+          ${item.type === 'food' ? '🍽️' : '📍'}
+        </div>
+        <div class="tpi-info">
+          <div class="tpi-name">${item.name}</div>
+          ${item.note ? `<div class="tpi-note">${item.note}</div>` : ''}
+        </div>
+        <button class="icon-btn" data-act="del-item" data-pid="${planId}" data-idx="${i}" style="width:24px;height:24px;font-size:10px;color:var(--rust)">✕</button>
+      </div>
+    `).join('');
+  },
+
+  async addPlanDay(travelId) {
+    const plans = await db.query(db.STORES.travelPlan, p => p.travelId === travelId);
+    const nextDay = plans.length + 1;
+    const today = UI.todayStr();
+    const body = `
+      <div class="form-row-2">
+        <div>
+          <label class="label">第几天</label>
+          <input class="field" id="pd_day" type="number" min="1" value="${nextDay}">
+        </div>
+        <div>
+          <label class="label">日期（可选）</label>
+          <input class="field" id="pd_date" type="date" value="${today}">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" id="pd_cancel">取消</button>
+        <button class="btn btn-primary" id="pd_save">添加</button>
+      </div>
+    `;
+    UI.showSheet('添加行程天', body, (root) => {
+      root.querySelector('#pd_cancel').onclick = () => UI.hideSheet();
+      root.querySelector('#pd_save').onclick = async () => {
+        const day = parseInt(root.querySelector('#pd_day').value) || nextDay;
+        const date = root.querySelector('#pd_date').value;
+        await db.add(db.STORES.travelPlan, {
+          travelId,
+          day,
+          date,
+          items: []
+        });
+        UI.hideSheet();
+        UI.toast('已添加第 ' + day + ' 天');
+        const t = await db.get(db.STORES.travel, travelId);
+        this.renderTravelPlan(t);
+      };
+    });
+  },
+
+  async addPlanItem(travelId, planId) {
+    const body = `
+      <div class="form-row">
+        <label class="label">类型</label>
+        <select class="field" id="pi_type">
+          <option value="scenic">📍 景点</option>
+          <option value="food">🍽️ 饭馆</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="label">名称</label>
+        <input class="field" id="pi_name" placeholder="如：故宫 / 全聚德" maxlength="30">
+      </div>
+      <div class="form-row">
+        <label class="label">备注</label>
+        <textarea class="field" id="pi_note" placeholder="交通、营业时间、必点菜..." rows="2" maxlength="200"></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" id="pi_cancel">取消</button>
+        <button class="btn btn-primary" id="pi_save">添加</button>
+      </div>
+    `;
+    UI.showSheet('添加行程项', body, (root) => {
+      root.querySelector('#pi_cancel').onclick = () => UI.hideSheet();
+      root.querySelector('#pi_save').onclick = async () => {
+        const name = root.querySelector('#pi_name').value.trim();
+        if (!name) return UI.toast('请输入名称');
+        const plan = await db.get(db.STORES.travelPlan, planId);
+        if (!plan) return UI.toast('行程不存在');
+        plan.items = plan.items || [];
+        plan.items.push({
+          type: root.querySelector('#pi_type').value,
+          name,
+          note: root.querySelector('#pi_note').value.trim()
+        });
+        await db.put(db.STORES.travelPlan, plan);
+        UI.hideSheet();
+        UI.toast('已添加');
+        const t = await db.get(db.STORES.travel, travelId);
+        this.renderTravelPlan(t);
+      };
+    });
   }
 };
 

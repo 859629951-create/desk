@@ -23,7 +23,7 @@ const App = {
 
   titles: {
     home: { title: '今日有雨', sub: '记录每一个想被珍藏的日子' },
-    study: { title: '学习清单', sub: '日积月累 · 终有所成' },
+    study: { title: '学习中心', sub: '日积月累 · 终有所成' },
     recipe: { title: '我会下厨', sub: '一饭一蔬皆是生活' },
     museum: { title: '博物馆掠影', sub: '一眼千年 · 文物留痕' },
     punch: { title: '打卡清单', sub: '城市漫步指南' },

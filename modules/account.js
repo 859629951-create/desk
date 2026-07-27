@@ -32,6 +32,7 @@ const Account = {
           <div class="tab active" data-tab="accounts">账户</div>
           <div class="tab" data-tab="logs">流水</div>
           <div class="tab" data-tab="advance">垫付</div>
+          <div class="tab" data-tab="savings">存钱罐</div>
           <div class="tab" data-tab="report">报告</div>
         </div>
         <div id="accContent"></div>
@@ -204,6 +205,9 @@ const Account = {
             this.logMenu(b.dataset.lid);
           };
         });
+      } else if (tab === 'savings') {
+        App.setFab(() => this.addSavingsPiggy());
+        await this.renderSavings(el);
       } else if (tab === 'report') {
         App.setFab(null);
         await this.renderReport(el, logs);
@@ -763,6 +767,257 @@ const Account = {
           await db.remove(db.STORES.accountLog, id);
           this.list();
         }
+      };
+    });
+  },
+
+  /* ====== 存钱罐 ====== */
+  async renderSavings(el) {
+    const piggyBanks = await db.all(db.STORES.savings);
+    piggyBanks.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const logs = await db.all(db.STORES.savingsLog);
+    logs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+    const totalSaved = piggyBanks.reduce((a, p) => a + (p.balance || 0), 0);
+    const totalDeposit = logs.filter(l => l.type === 'in').reduce((a, l) => a + l.amount, 0);
+    const totalWithdraw = logs.filter(l => l.type === 'out').reduce((a, l) => a + l.amount, 0);
+
+    el.innerHTML = `
+      <div class="savings-overview">
+        <div class="so-amount">¥${totalSaved.toFixed(2)}</div>
+        <div class="so-label">存钱罐总额</div>
+        <div class="so-stats">
+          <div class="so-stat"><span class="n">¥${totalDeposit.toFixed(0)}</span>累计存入</div>
+          <div class="so-stat"><span class="n">¥${totalWithdraw.toFixed(0)}</span>累计取出</div>
+          <div class="so-stat"><span class="n">${piggyBanks.length}</span>存钱罐</div>
+        </div>
+      </div>
+
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>🐷 存钱罐（${piggyBanks.length}）</span>
+        <button class="btn btn-jade" id="addPiggy" style="font-size:11px;padding:4px 10px;">＋ 新建</button>
+      </div>
+      <div id="piggyList"></div>
+
+      <div class="section-title">📝 存取记录</div>
+      <div id="savingsLogList"></div>
+    `;
+
+    document.getElementById('addPiggy').onclick = () => this.addSavingsPiggy();
+    this.renderPiggyList(piggyBanks);
+    this.renderSavingsLogs(logs);
+  },
+
+  async renderPiggyList(piggyBanks) {
+    const el = document.getElementById('piggyList');
+    if (!el) return;
+    if (piggyBanks.length === 0) {
+      el.innerHTML = `<div class="empty"><div class="emoji">🐷</div><div class="hint">新建一个存钱罐，开始攒钱</div></div>`;
+      return;
+    }
+    const icons = ['🐷', '🏦', '🎁', '🎯', '💰', '📚', '✈️', '🏠'];
+    el.innerHTML = piggyBanks.map((p, i) => {
+      const icon = p.icon || icons[i % icons.length];
+      const target = p.target || 0;
+      const progress = target > 0 ? Math.min(100, Math.round((p.balance / target) * 100)) : 0;
+      return `
+        <div class="savings-piggy" data-id="${p.id}">
+          <div class="sp-head">
+            <div class="sp-name">${icon} ${p.name}</div>
+            <button class="icon-btn" data-act="piggy-menu" data-pid="${p.id}" style="width:28px;height:28px;font-size:12px">⋯</button>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <span class="sp-amount">¥${(p.balance || 0).toFixed(2)}</span>
+            ${target > 0 ? `<span style="font-size:12px;color:var(--ink-mute)">目标 ¥${target.toFixed(0)}</span>` : ''}
+          </div>
+          ${target > 0 ? `
+            <div class="sp-bar">
+              <div class="sp-bar-fill" style="width:${progress}%"></div>
+            </div>
+            <div style="font-size:11px;color:var(--ink-mute)">${progress}% ${progress >= 100 ? '🎉 已达标' : ''}</div>
+          ` : ''}
+          <div class="sp-actions">
+            <button class="sp-deposit" data-act="deposit" data-pid="${p.id}">💰 存入</button>
+            <button class="sp-withdraw" data-act="withdraw" data-pid="${p.id}">💸 取出</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    el.querySelectorAll('[data-act="deposit"]').forEach(b => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        this.savingsTransaction(b.dataset.pid, 'in');
+      };
+    });
+    el.querySelectorAll('[data-act="withdraw"]').forEach(b => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        this.savingsTransaction(b.dataset.pid, 'out');
+      };
+    });
+    el.querySelectorAll('[data-act="piggy-menu"]').forEach(b => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        this.piggyMenu(b.dataset.pid);
+      };
+    });
+  },
+
+  async renderSavingsLogs(logs) {
+    const el = document.getElementById('savingsLogList');
+    if (!el) return;
+    if (logs.length === 0) {
+      el.innerHTML = `<div class="empty"><div class="emoji">📝</div><div class="hint">暂无存取记录</div></div>`;
+      return;
+    }
+    el.innerHTML = logs.slice(0, 30).map(l => `
+      <div class="savings-log-item">
+        <span class="sl-icon">${l.type === 'in' ? '💰' : '💸'}</span>
+        <div class="sl-info">
+          <div class="sl-desc">${l.piggyName || '存钱罐'} · ${l.type === 'in' ? '存入' : '取出'}</div>
+          ${l.reason ? `<div class="sl-reason">原因：${l.reason}</div>` : ''}
+          <div class="sl-reason">${UI.formatDate(l.createdAt, true)}</div>
+        </div>
+        <span class="sl-amount ${l.type === 'in' ? 'in' : 'out'}">${l.type === 'in' ? '+' : '-'}¥${l.amount.toFixed(2)}</span>
+      </div>
+    `).join('');
+  },
+
+  addSavingsPiggy(editId) {
+    const isEdit = !!editId;
+    const icons = ['🐷', '🏦', '🎁', '🎯', '💰', '📚', '✈️', '🏠'];
+    const body = `
+      <div class="form-row">
+        <label class="label">存钱罐名称</label>
+        <input class="field" id="pg_name" placeholder="如：旅行基金" maxlength="20">
+      </div>
+      <div class="form-row">
+        <label class="label">图标</label>
+        <div class="sc-color-picker" id="pg_icons">
+          ${icons.map((ic, i) => `<label class="sc-cp-item" style="font-size:20px;"><input type="radio" name="pgicon" value="${ic}" ${i === 0 ? 'checked' : ''}><span style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;font-size:16px;">${ic}</span></label>`).join('')}
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="label">目标金额（可选）</label>
+        <input class="field" id="pg_target" type="number" min="0" placeholder="如 10000">
+      </div>
+      <div class="form-actions">
+        ${isEdit ? '<button class="btn btn-ghost" id="pg_cancel">取消</button>' : ''}
+        <button class="btn btn-primary" id="pg_save">${isEdit ? '保存' : '创建'}</button>
+      </div>
+    `;
+    UI.showSheet(isEdit ? '编辑存钱罐' : '新建存钱罐', body, (root) => {
+      root.querySelector('#pg_save').onclick = async () => {
+        const name = root.querySelector('#pg_name').value.trim();
+        if (!name) return UI.toast('请输入存钱罐名称');
+        const icon = root.querySelector('#pg_icons input:checked')?.value || '🐷';
+        const target = parseFloat(root.querySelector('#pg_target').value) || 0;
+        if (isEdit) {
+          const old = await db.get(db.STORES.savings, editId);
+          old.name = name;
+          old.icon = icon;
+          old.target = target;
+          await db.put(db.STORES.savings, old);
+        } else {
+          await db.add(db.STORES.savings, { name, icon, target, balance: 0 });
+        }
+        UI.hideSheet();
+        UI.toast(isEdit ? '已保存' : '已创建');
+        const el = document.getElementById('accContent');
+        if (el) this.renderSavings(el);
+      };
+      if (isEdit) {
+        (async () => {
+          const p = await db.get(db.STORES.savings, editId);
+          if (p) {
+            root.querySelector('#pg_name').value = p.name || '';
+            const radio = root.querySelector(`#pg_icons input[value="${p.icon}"]`);
+            if (radio) radio.checked = true;
+            root.querySelector('#pg_target').value = p.target || '';
+          }
+        })();
+      }
+    });
+  },
+
+  piggyMenu(id) {
+    const body = `
+      <div class="choice-grid">
+        <button class="choice" data-act="edit">✏️ 编辑</button>
+        <button class="choice" data-act="del" style="color:var(--rust)">🗑 删除</button>
+      </div>
+    `;
+    UI.showSheet('存钱罐操作', body, (root) => {
+      root.querySelector('[data-act="edit"]').onclick = () => { UI.hideSheet(); this.addSavingsPiggy(id); };
+      root.querySelector('[data-act="del"]').onclick = async () => {
+        UI.hideSheet();
+        if (await UI.confirm('删除这个存钱罐？相关记录也会删除。')) {
+          await db.remove(db.STORES.savings, id);
+          const logs = await db.all(db.STORES.savingsLog);
+          for (const l of logs.filter(l => l.piggyId === id)) {
+            await db.remove(db.STORES.savingsLog, l.id);
+          }
+          UI.toast('已删除');
+          const el = document.getElementById('accContent');
+          if (el) this.renderSavings(el);
+        }
+      };
+    });
+  },
+
+  savingsTransaction(piggyId, type) {
+    const typeLabel = type === 'in' ? '存入' : '取出';
+    const body = `
+      <div class="form-row">
+        <label class="label">${typeLabel}金额</label>
+        <input class="field" id="st_amount" type="number" min="0.01" step="0.01" placeholder="如 100.00" autofocus>
+      </div>
+      <div class="form-row">
+        <label class="label">${typeLabel}原因${type === 'out' ? '（必填）' : '（可选）'}</label>
+        <textarea class="field" id="st_reason" placeholder="${type === 'out' ? '为什么要取出这笔钱？' : '如：每月固定储蓄、奖金等'}" rows="2" maxlength="100"></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" id="st_cancel">取消</button>
+        <button class="btn btn-primary" id="st_save">确认${typeLabel}</button>
+      </div>
+    `;
+    UI.showSheet(`${type === 'in' ? '💰' : '💸'} ${typeLabel}`, body, async (root) => {
+      const piggy = await db.get(db.STORES.savings, piggyId);
+      if (!piggy) { UI.toast('存钱罐不存在'); UI.hideSheet(); return; }
+      root.querySelector('#st_cancel').onclick = () => UI.hideSheet();
+      root.querySelector('#st_save').onclick = async () => {
+        const amount = parseFloat(root.querySelector('#st_amount').value);
+        if (!amount || amount <= 0) return UI.toast('请输入有效金额');
+        const reason = root.querySelector('#st_reason').value.trim();
+        if (type === 'out' && !reason) return UI.toast('取出时请填写原因');
+
+        // 检查余额
+        if (type === 'out' && amount > (piggy.balance || 0)) {
+          return UI.toast(`余额不足，当前余额 ¥${(piggy.balance || 0).toFixed(2)}`);
+        }
+
+        // 更新存钱罐余额
+        if (type === 'in') {
+          piggy.balance = (piggy.balance || 0) + amount;
+        } else {
+          piggy.balance = (piggy.balance || 0) - amount;
+        }
+        await db.put(db.STORES.savings, piggy);
+
+        // 记录流水
+        await db.add(db.STORES.savingsLog, {
+          piggyId,
+          piggyName: piggy.name,
+          type,
+          amount,
+          reason
+        });
+
+        UI.hideSheet();
+        UI.toast(`${typeLabel}成功！当前余额 ¥${piggy.balance.toFixed(2)}`);
+        const el = document.getElementById('accContent');
+        if (el) this.renderSavings(el);
       };
     });
   }
