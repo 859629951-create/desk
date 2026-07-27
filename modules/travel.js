@@ -7,7 +7,7 @@
 
 const Travel = {
   async list() {
-    App.setActiveNav('more');
+    App.setActiveNav('travel');
     const main = document.getElementById('appMain');
     main.innerHTML = `
       <div class="fade-up">
@@ -382,7 +382,7 @@ const Travel = {
   async detail(id) {
     const t = await db.get(db.STORES.travel, id);
     if (!t) return router.navigate('travel');
-    App.setActiveNav('more');
+    App.setActiveNav('travel');
     App.setFab(() => this.addPhoto(id));
     const main = document.getElementById('appMain');
     const journal = t.journal || [];

@@ -6,16 +6,22 @@ const App = {
   navItems: [
     { key: 'home', icon: '🏠', label: '首页' },
     { key: 'study', icon: '📚', label: '学习' },
-    { key: 'travel', icon: '✈️', label: '旅游' },
+    { key: 'punch', icon: '📍', label: '打卡' },
     { key: 'account', icon: '💰', label: '记账' },
+    { key: 'travel', icon: '✈️', label: '旅游' },
     { key: 'more', icon: '☰', label: '更多' }
   ],
+
+  // ====== 导航栏配置管理 ======
+  navConfig: {
+    order: null,   // null 表示使用默认顺序
+    hidden: []     // 隐藏的 Tab key 列表
+  },
 
   moreModules: [
     { key: 'pet', icon: '🐾', label: '宠物记录', sub: '健康与成长' },
     { key: 'recipe', icon: '🍳', label: '我会下厨', sub: '菜谱与买菜' },
     { key: 'museum', icon: '🏺', label: '博物馆掠影', sub: '文物识别' },
-    { key: 'punch', icon: '📍', label: '打卡清单', sub: '吃喝玩乐' },
     { key: 'interest', icon: '💡', label: '兴趣清单', sub: '想做的事' },
     { key: 'work', icon: '💼', label: '工作清单', sub: '进度管理' },
     { key: 'settings', icon: '⚙️', label: '设置', sub: 'AI / 安装 / 提醒' }
@@ -42,9 +48,43 @@ const App = {
     this.checkInstall();
   },
 
+  getVisibleNavItems() {
+    // 从 localStorage 加载配置
+    const config = localStorage.getItem('navConfig');
+    let order = null, hidden = [];
+    if (config) {
+      try {
+        const c = JSON.parse(config);
+        order = c.order;
+        hidden = c.hidden || [];
+      } catch(e) {}
+    }
+    const all = this.navItems;
+    const visible = all.filter(n => !hidden.includes(n.key) && n.key !== 'home'); // home 始终显示
+    // home 始终在第一位
+    const result = [all[0]];
+    if (order) {
+      order.filter(k => visible.some(v => v.key === k)).forEach(k => {
+        const item = visible.find(v => v.key === k);
+        if (item) result.push(item);
+      });
+      // 处理不在 order 中但可见的项
+      visible.forEach(v => {
+        if (!order.includes(v.key) && !result.some(r => r.key === v.key)) {
+          result.push(v);
+        }
+      });
+    } else {
+      result.push(...visible);
+    }
+    return result;
+  },
+
   renderNav() {
     const nav = document.getElementById('appNav');
-    nav.innerHTML = this.navItems
+    const items = this.getVisibleNavItems();
+    nav.style.setProperty('--nav-count', items.length);
+    nav.innerHTML = items
       .map(
         (i) => `
       <button class="nav-item" data-route="${i.key}">
@@ -80,6 +120,13 @@ const App = {
     const t = this.titles[route] || this.titles.home;
     document.getElementById('pageTitle').textContent = t.title;
     document.getElementById('pageSub').textContent = t.sub;
+    // 新增：计算激活 Tab 的索引，设置 CSS 变量
+    const keys = this.getVisibleNavItems().map(n => n.key);
+    const activeIndex = keys.indexOf(route);
+    const nav = document.getElementById('appNav');
+    if (activeIndex >= 0 && nav) {
+      nav.style.setProperty('--nav-slider-index', activeIndex);
+    }
   },
 
   setFab(handler) {

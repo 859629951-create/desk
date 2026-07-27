@@ -82,9 +82,8 @@ const StudyCenter = {
     const subjects = await db.all(db.STORES.languageSubject);
     subjects.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
-    // 各科目今日学习统计
-    const allLogs = await db.all(db.STORES.languageLog);
-    const todayLogs = allLogs.filter(l => l.date === today);
+    // 各科目任务统计
+    const allTasks = await db.all(db.STORES.languageTask);
 
     el.innerHTML = `
       <!-- 多邻国打卡大按钮 -->
@@ -100,11 +99,8 @@ const StudyCenter = {
         </div>
       </div>
 
-      <!-- 语言科目 -->
-      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
-        <span>📚 语言科目</span>
-        <button class="btn btn-jade" id="addSubject" style="font-size:11px;padding:4px 10px;">＋ 添加科目</button>
-      </div>
+      <!-- 添加科目按钮 -->
+      <button class="btn btn-jade" id="addSubject" style="width:100%;margin-bottom:12px;">＋ 添加科目</button>
       <div id="subjectList"></div>
     `;
 
@@ -120,10 +116,10 @@ const StudyCenter = {
     };
 
     document.getElementById('addSubject').onclick = () => this.addLanguageSubject();
-    this.renderLanguageSubjects(subjects, allLogs, todayLogs);
+    this.renderLanguageSubjects(subjects, allTasks);
   },
 
-  async renderLanguageSubjects(subjects, allLogs, todayLogs) {
+  async renderLanguageSubjects(subjects, allTasks) {
     const el = document.getElementById('subjectList');
     if (!el) return;
     if (subjects.length === 0) {
@@ -131,40 +127,219 @@ const StudyCenter = {
       return;
     }
     el.innerHTML = subjects.map(s => {
-      const sLogs = allLogs.filter(l => l.subjectId === s.id);
-      const sTodayLogs = todayLogs.filter(l => l.subjectId === s.id);
-      const todayMin = sTodayLogs.reduce((a, l) => a + (l.minutes || 0), 0);
-      const todayWords = sTodayLogs.reduce((a, l) => a + (l.words || 0), 0);
+      const sTasks = allTasks.filter(t => t.subjectId === s.id);
+      const doneCount = sTasks.filter(t => t.done).length;
       return `
-        <div class="list-item" data-id="${s.id}" style="margin-bottom:10px;">
+        <div class="list-item" data-id="${s.id}" style="margin-bottom:10px;cursor:pointer;">
           <div class="li-row">
             <span style="font-size:20px">${s.icon || '📖'}</span>
-            <div style="flex:1" data-act="open">
+            <div style="flex:1">
               <div class="li-title">${s.name}</div>
               <div class="li-tags">
-                ${todayMin > 0 ? `<span class="chip blue">⏱️ 今日${todayMin}分</span>` : ''}
-                ${todayWords > 0 ? `<span class="chip green">📝 今日${todayWords}词</span>` : ''}
-                <span class="chip gray">${sLogs.length} 条记录</span>
+                <span class="chip gray">${sTasks.length} 个任务</span>
+                ${doneCount > 0 ? `<span class="chip green">✓ ${doneCount} 完成</span>` : ''}
               </div>
             </div>
             <button class="icon-btn" data-act="menu" data-sid="${s.id}" style="width:32px;height:32px;font-size:14px">⋯</button>
-          </div>
-          <div style="display:flex;gap:8px;margin-top:8px;">
-            <button class="btn btn-ghost" data-act="log" data-sid="${s.id}" style="flex:1;font-size:12px;padding:6px;">＋ 记录学习</button>
-            <button class="btn btn-ghost" data-act="view" data-sid="${s.id}" style="flex:1;font-size:12px;padding:6px;">📋 查看记录</button>
           </div>
         </div>
       `;
     }).join('');
 
-    el.querySelectorAll('[data-act="menu"]').forEach(b => {
-      b.onclick = (e) => { e.stopPropagation(); this.subjectMenu(b.dataset.sid); };
+    el.querySelectorAll('.list-item').forEach(item => {
+      const id = item.dataset.id;
+      item.querySelector('[data-act="menu"]').onclick = (e) => {
+        e.stopPropagation();
+        this.subjectMenu(id);
+      };
+      item.onclick = (e) => {
+        if (e.target.closest('[data-act="menu"]')) return;
+        this.showSubjectDetail(id);
+      };
     });
-    el.querySelectorAll('[data-act="log"]').forEach(b => {
-      b.onclick = (e) => { e.stopPropagation(); this.addLanguageLog(b.dataset.sid); };
+  },
+
+  async showSubjectDetail(subjectId) {
+    const subject = await db.get(db.STORES.languageSubject, subjectId);
+    const allTasks = await db.all(db.STORES.languageTask);
+    const tasks = allTasks.filter(t => t.subjectId === subjectId).sort((a, b) => {
+      // 未完成排前面，高优先级排前面
+      if ((a.done || false) !== (b.done || false)) return (a.done || false) ? 1 : -1;
+      const prioMap = { '高': 0, '中': 1, '低': 2 };
+      return (prioMap[a.priority] || 2) - (prioMap[b.priority] || 2);
     });
-    el.querySelectorAll('[data-act="view"]').forEach(b => {
-      b.onclick = (e) => { e.stopPropagation(); this.viewLanguageLogs(b.dataset.sid); };
+    const totalCount = tasks.length;
+    const doneCount = tasks.filter(t => t.done).length;
+    const main = document.getElementById('appMain');
+
+    main.innerHTML = `
+      <div class="fade-up">
+        <button class="detail-back" id="sdBack">‹ 返回</button>
+        <div class="card" style="padding:16px;margin-bottom:14px;">
+          <h2 style="font-family:var(--font-display);font-size:20px;">${subject?.icon || '📖'} ${subject?.name || '科目'}</h2>
+          <div class="li-tags" style="margin-top:8px">
+            <span class="chip gray">${totalCount} 个任务</span>
+            <span class="chip green">✓ ${doneCount} 完成</span>
+          </div>
+        </div>
+        <div id="taskList"></div>
+      </div>
+    `;
+    document.getElementById('sdBack').onclick = () => this.goBack('language');
+
+    // 设置 FAB 用于添加任务
+    App.setFab(() => this.showTaskDetail(subjectId, null));
+
+    const renderTasks = () => {
+      const listEl = document.getElementById('taskList');
+      if (!listEl) return;
+      if (tasks.length === 0) {
+        listEl.innerHTML = `<div class="empty"><div class="emoji">📋</div><div class="hint">还没有任务，点击 + 添加</div></div>`;
+        return;
+      }
+      const prioColorMap = { '高': 'var(--cinnabar)', '中': 'var(--gold)', '低': 'var(--ink-mute)' };
+      const freqLabelMap = { '每天': '每天', '每周': '每周', '自定义': '自定义' };
+      listEl.innerHTML = tasks.map(t => {
+        const prioColor = prioColorMap[t.priority] || 'var(--ink-mute)';
+        const freqLabel = freqLabelMap[t.frequency] || (t.customFreq || '');
+        return `
+          <div class="list-item" data-tid="${t.id}" style="margin-bottom:8px;cursor:pointer;${t.done ? 'opacity:0.6;' : ''}">
+            <div class="li-row">
+              <div style="width:4px;height:32px;border-radius:2px;background:${prioColor};margin-right:10px;flex-shrink:0;"></div>
+              <button class="check ${t.done ? 'done' : ''}" data-act="toggle" data-tid="${t.id}" style="width:22px;height:22px;border-width:1.5px;flex-shrink:0;">✓</button>
+              <div style="flex:1">
+                <div class="li-title" style="${t.done ? 'text-decoration:line-through;' : ''}">${t.content}</div>
+                <div class="li-tags" style="margin-top:4px">
+                  ${freqLabel ? `<span class="chip gray">${freqLabel}</span>` : ''}
+                  ${t.note ? `<span class="chip gray" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.note}">${t.note}</span>` : ''}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // 勾选完成/取消完成
+      listEl.querySelectorAll('[data-act="toggle"]').forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          const tid = btn.dataset.tid;
+          const task = await db.get(db.STORES.languageTask, tid);
+          task.done = !task.done;
+          await db.put(db.STORES.languageTask, task);
+          // 更新本地数组
+          const localTask = tasks.find(t => t.id === tid);
+          if (localTask) localTask.done = task.done;
+          renderTasks();
+        };
+      });
+
+      // 点击任务卡片打开详情
+      listEl.querySelectorAll('.list-item').forEach(item => {
+        item.onclick = (e) => {
+          if (e.target.closest('[data-act="toggle"]')) return;
+          this.showTaskDetail(subjectId, item.dataset.tid);
+        };
+      });
+    };
+
+    renderTasks();
+  },
+
+  showTaskDetail(subjectId, taskId) {
+    const isEdit = !!taskId;
+    const body = `
+      <div class="form-row">
+        <label class="label">任务内容 *</label>
+        <textarea class="field" id="tf_content" placeholder="如：背 50 个单词、做 2 篇阅读理解" rows="3" maxlength="200"></textarea>
+      </div>
+      <div class="form-row-2">
+        <div>
+          <label class="label">执行频次</label>
+          <select class="field" id="tf_freq">
+            <option value="每天">每天</option>
+            <option value="每周">每周</option>
+            <option value="自定义">自定义</option>
+          </select>
+        </div>
+        <div>
+          <label class="label">优先级</label>
+          <select class="field" id="tf_prio">
+            <option value="中">中</option>
+            <option value="高">高</option>
+            <option value="低">低</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row" id="tf_custom_row" style="display:none;">
+        <label class="label">自定义频次描述</label>
+        <input class="field" id="tf_custom" placeholder="如：每周一三五" maxlength="30">
+      </div>
+      <div class="form-row">
+        <label class="label">备注</label>
+        <textarea class="field" id="tf_note" placeholder="可选备注" rows="2" maxlength="200"></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" id="tf_cancel">取消</button>
+        <button class="btn btn-primary" id="tf_save">${isEdit ? '保存' : '添加任务'}</button>
+      </div>
+    `;
+
+    UI.showSheet(isEdit ? '编辑任务' : '添加任务', body, (root) => {
+      let loaded = true;
+      const freqSel = root.querySelector('#tf_freq');
+      const customRow = root.querySelector('#tf_custom_row');
+
+      freqSel.onchange = () => {
+        customRow.style.display = freqSel.value === '自定义' ? '' : 'none';
+      };
+
+      root.querySelector('#tf_cancel').onclick = () => UI.hideSheet();
+      root.querySelector('#tf_save').onclick = async () => {
+        if (isEdit && !loaded) {
+          UI.toast('数据加载中，请稍候');
+          return;
+        }
+        const content = root.querySelector('#tf_content').value.trim();
+        if (!content) {
+          UI.toast('请输入任务内容');
+          return;
+        }
+        const frequency = freqSel.value;
+        const priority = root.querySelector('#tf_prio').value;
+        const customFreq = root.querySelector('#tf_custom').value.trim();
+        const note = root.querySelector('#tf_note').value.trim();
+
+        if (isEdit) {
+          const task = await db.get(db.STORES.languageTask, taskId);
+          Object.assign(task, { content, frequency, customFreq, note, priority });
+          await db.put(db.STORES.languageTask, task);
+        } else {
+          await db.add(db.STORES.languageTask, {
+            subjectId, content, frequency, customFreq, note, priority, done: false
+          });
+        }
+        UI.hideSheet();
+        UI.toast(isEdit ? '已保存' : '已添加任务');
+        this.showSubjectDetail(subjectId);
+      };
+
+      // 编辑模式：异步加载已有数据
+      if (isEdit) {
+        loaded = false;
+        (async () => {
+          const task = await db.get(db.STORES.languageTask, taskId);
+          if (task) {
+            root.querySelector('#tf_content').value = task.content || '';
+            root.querySelector('#tf_freq').value = task.frequency || '每天';
+            root.querySelector('#tf_prio').value = task.priority || '中';
+            root.querySelector('#tf_custom').value = task.customFreq || '';
+            root.querySelector('#tf_note').value = task.note || '';
+            customRow.style.display = task.frequency === '自定义' ? '' : 'none';
+          }
+          loaded = true;
+        })();
+      }
     });
   },
 
@@ -179,11 +354,11 @@ const StudyCenter = {
       root.querySelector('[data-act="edit"]').onclick = () => { UI.hideSheet(); this.addLanguageSubject(id); };
       root.querySelector('[data-act="del"]').onclick = async () => {
         UI.hideSheet();
-        if (await UI.confirm('删除这个科目？相关学习记录也会删除。')) {
+        if (await UI.confirm('删除这个科目？相关任务也会删除。')) {
           await db.remove(db.STORES.languageSubject, id);
-          const logs = await db.all(db.STORES.languageLog);
-          for (const l of logs.filter(l => l.subjectId === id)) {
-            await db.remove(db.STORES.languageLog, l.id);
+          const tasks = await db.all(db.STORES.languageTask);
+          for (const t of tasks.filter(t => t.subjectId === id)) {
+            await db.remove(db.STORES.languageTask, t.id);
           }
           UI.toast('已删除');
           this.renderLanguage();
@@ -238,139 +413,6 @@ const StudyCenter = {
           }
         })();
       }
-    });
-  },
-
-  addLanguageLog(subjectId) {
-    const today = UI.todayStr();
-    const body = `
-      <div class="form-row">
-        <label class="label">学习类型</label>
-        <select class="field" id="ll_type">
-          <option value="time">⏱️ 学习时长</option>
-          <option value="words">📝 背单词</option>
-          <option value="sentence">💬 长难句/语法</option>
-          <option value="listening">👂 听力练习</option>
-          <option value="speaking">🗣️ 口语练习</option>
-          <option value="reading">📖 阅读理解</option>
-        </select>
-      </div>
-      <div class="form-row-2" id="ll_num_row">
-        <div>
-          <label class="label" id="ll_num_label">学习时长（分钟）</label>
-          <input class="field" id="ll_num" type="number" min="0" placeholder="如 45">
-        </div>
-        <div>
-          <label class="label">日期</label>
-          <input class="field" id="ll_date" type="date" value="${today}">
-        </div>
-      </div>
-      <div class="form-row">
-        <label class="label">备注</label>
-        <textarea class="field" id="ll_note" placeholder="学习内容、心得..." maxlength="200"></textarea>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-ghost" id="ll_cancel">取消</button>
-        <button class="btn btn-primary" id="ll_save">添加</button>
-      </div>
-    `;
-    UI.showSheet('记录学习', body, (root) => {
-      const typeSel = root.querySelector('#ll_type');
-      const numLabel = root.querySelector('#ll_num_label');
-      const numInput = root.querySelector('#ll_num');
-      const numRow = root.querySelector('#ll_num_row');
-
-      typeSel.onchange = () => {
-        if (typeSel.value === 'time') {
-          numLabel.textContent = '学习时长（分钟）';
-          numInput.placeholder = '如 45';
-          numRow.style.display = '';
-        } else if (typeSel.value === 'words') {
-          numLabel.textContent = '背单词数（个）';
-          numInput.placeholder = '如 50';
-          numRow.style.display = '';
-        } else {
-          numRow.style.display = 'none';
-        }
-      };
-
-      root.querySelector('#ll_cancel').onclick = () => UI.hideSheet();
-      root.querySelector('#ll_save').onclick = async () => {
-        const type = typeSel.value;
-        const date = root.querySelector('#ll_date').value;
-        const note = root.querySelector('#ll_note').value.trim();
-        const payload = { subjectId, type, date, note };
-        if (type === 'time') payload.minutes = parseInt(numInput.value) || 0;
-        if (type === 'words') payload.words = parseInt(numInput.value) || 0;
-        await db.add(db.STORES.languageLog, payload);
-        UI.hideSheet();
-        UI.toast('已记录');
-        this.renderLanguage();
-      };
-    });
-  },
-
-  async viewLanguageLogs(subjectId) {
-    const subject = await db.get(db.STORES.languageSubject, subjectId);
-    const logs = await db.all(db.STORES.languageLog);
-    const sLogs = logs.filter(l => l.subjectId === subjectId).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    const main = document.getElementById('appMain');
-
-    const typeLabels = {
-      time: '⏱️ 学习时长', words: '📝 背单词', sentence: '💬 长难句/语法',
-      listening: '👂 听力', speaking: '🗣️ 口语', reading: '📖 阅读'
-    };
-
-    const totalMin = sLogs.reduce((a, l) => a + (l.minutes || 0), 0);
-    const totalWords = sLogs.reduce((a, l) => a + (l.words || 0), 0);
-
-    main.innerHTML = `
-      <div class="fade-up">
-        <button class="detail-back" id="vlBack">‹ 返回</button>
-        <div class="card" style="padding:16px;margin-bottom:14px;">
-          <h2 style="font-family:var(--font-display);font-size:20px;">${subject?.icon || '📖'} ${subject?.name || '科目'}</h2>
-          <div class="li-tags" style="margin-top:8px">
-            <span class="chip blue">⏱️ ${totalMin} 分钟</span>
-            <span class="chip green">📝 ${totalWords} 词</span>
-            <span class="chip gray">${sLogs.length} 条记录</span>
-          </div>
-        </div>
-        <div class="section-title">📋 学习记录</div>
-        <div id="vlList"></div>
-      </div>
-    `;
-    document.getElementById('vlBack').onclick = () => this.goBack('language');
-
-    const listEl = document.getElementById('vlList');
-    if (sLogs.length === 0) {
-      listEl.innerHTML = `<div class="empty"><div class="emoji">📖</div><div class="hint">还没有学习记录</div></div>`;
-      return;
-    }
-    listEl.innerHTML = sLogs.map(l => `
-      <div class="list-item" data-id="${l.id}">
-        <div class="li-row">
-          <span style="font-size:16px">${typeLabels[l.type]?.split(' ')[0] || '📖'}</span>
-          <div style="flex:1">
-            <div class="li-title">${typeLabels[l.type] || '学习'}</div>
-            ${l.note ? `<div class="li-sub">${l.note}</div>` : ''}
-            <div class="li-tags">
-              <span class="chip gray">${l.date}</span>
-              ${l.minutes ? `<span class="chip blue">⏱️ ${l.minutes}分</span>` : ''}
-              ${l.words ? `<span class="chip green">📝 ${l.words}词</span>` : ''}
-            </div>
-          </div>
-          <button class="icon-btn" data-act="del" data-lid="${l.id}" style="width:28px;height:28px;font-size:12px">✕</button>
-        </div>
-      </div>
-    `).join('');
-    listEl.querySelectorAll('[data-act="del"]').forEach(b => {
-      b.onclick = async (e) => {
-        e.stopPropagation();
-        if (await UI.confirm('删除这条记录？')) {
-          await db.remove(db.STORES.languageLog, b.dataset.lid);
-          this.viewLanguageLogs(subjectId);
-        }
-      };
     });
   },
 
@@ -1358,11 +1400,12 @@ const StudyCenter = {
   courseMenu(id) {
     const body = `
       <div class="choice-grid">
+        <button class="choice" data-act="add-log">📖 本周上课记录</button>
         <button class="choice" data-act="edit">✏️ 编辑</button>
         <button class="choice" data-act="del" style="color:var(--rust)">🗑 删除</button>
-      </div>
-    `;
+      </div>`;
     UI.showSheet('课程操作', body, (root) => {
+      root.querySelector('[data-act="add-log"]').onclick = () => { UI.hideSheet(); this.quickAddClassLog(id); };
       root.querySelector('[data-act="edit"]').onclick = () => { UI.hideSheet(); this.addCourse(id); };
       root.querySelector('[data-act="del"]').onclick = async () => {
         UI.hideSheet();
@@ -1480,6 +1523,75 @@ const StudyCenter = {
   },
 
   /* 上课记录 */
+  async quickAddClassLog(courseId) {
+    const course = await db.get(db.STORES.course, courseId);
+    if (!course) return;
+    const today = UI.todayStr();
+    const body = `
+      <div class="form-row">
+        <label class="label">课程</label>
+        <input class="field" value="${course.name}" disabled style="opacity:0.6">
+      </div>
+      <div class="form-row-2">
+        <div>
+          <label class="label">日期</label>
+          <input class="field" type="date" id="ql_date" value="${today}">
+        </div>
+        <div>
+          <label class="label">考勤</label>
+          <select class="field" id="ql_att">
+            <option value="present">✅ 出勤</option>
+            <option value="late">⏰ 迟到</option>
+            <option value="absent">❌ 缺勤</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="label">上课内容</label>
+        <textarea class="field" id="ql_content" placeholder="今天讲了什么..." rows="3" maxlength="500"></textarea>
+      </div>
+      <div class="form-row">
+        <label class="label">作业</label>
+        <textarea class="field" id="ql_homework" placeholder="布置的作业..." rows="2" maxlength="300"></textarea>
+      </div>
+      <div class="form-row">
+        <label class="label">作业照片</label>
+        <div class="img-grid" id="ql_hw_photos">
+          <div class="upload-trigger" id="ql_hw_add">📷<span>添加照片</span></div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" id="ql_cancel">取消</button>
+        <button class="btn btn-primary" id="ql_save">添加记录</button>
+      </div>`;
+    UI.showSheet('快捷上课记录', body, (root) => {
+      let hwPhotos = [];
+      function renderPhotos() {
+        const grid = root.querySelector('#ql_hw_photos');
+        const addBtn = '<div class="upload-trigger" id="ql_hw_add">📷<span>添加照片</span></div>';
+        grid.innerHTML = hwPhotos.map((p, i) => `<div class="img-cell"><img src="${p}" alt="照片"><button class="del" data-i="${i}">✕</button></div>`).join('') + addBtn;
+        grid.querySelectorAll('.del').forEach(d => { d.onclick = () => { hwPhotos.splice(+d.dataset.i, 1); renderPhotos(); }; });
+        const addEl = root.querySelector('#ql_hw_add');
+        if (addEl) addEl.onclick = async () => { const imgs = await UI.pickImages(6); hwPhotos.push(...imgs); renderPhotos(); };
+      }
+      renderPhotos();
+      root.querySelector('#ql_save').onclick = async () => {
+        await db.add(db.STORES.classLog, {
+          courseId: course.id,
+          courseName: course.name,
+          date: root.querySelector('#ql_date').value,
+          attendance: root.querySelector('#ql_att').value,
+          content: root.querySelector('#ql_content').value.trim(),
+          homework: root.querySelector('#ql_homework').value.trim(),
+          homeworkPhotos: hwPhotos
+        });
+        UI.hideSheet();
+        UI.toast('已添加上课记录');
+      };
+      root.querySelector('#ql_cancel').onclick = () => UI.hideSheet();
+    });
+  },
+
   async showClassLogs() {
     const logs = await db.all(db.STORES.classLog);
     logs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -1576,12 +1688,28 @@ const StudyCenter = {
         <label class="label">作业</label>
         <textarea class="field" id="cl_homework" placeholder="布置的作业..." rows="2" maxlength="300"></textarea>
       </div>
+      <div class="form-row">
+        <label class="label">作业照片</label>
+        <div class="img-grid" id="cl_hw_photos">
+          <div class="upload-trigger" id="cl_hw_add">📷<span>添加照片</span></div>
+        </div>
+      </div>
       <div class="form-actions">
         ${isEdit ? '<button class="btn btn-ghost" id="cl_cancel">取消</button>' : ''}
         <button class="btn btn-primary" id="cl_save">${isEdit ? '保存' : '添加'}</button>
       </div>
     `;
     UI.showSheet(isEdit ? '编辑上课记录' : '添加上课记录', body, (root) => {
+      let hwPhotos = [];
+      function renderPhotos() {
+        const grid = root.querySelector('#cl_hw_photos');
+        const addBtn = '<div class="upload-trigger" id="cl_hw_add">📷<span>添加照片</span></div>';
+        grid.innerHTML = hwPhotos.map((p, i) => `<div class="img-cell"><img src="${p}" alt="照片"><button class="del" data-i="${i}">✕</button></div>`).join('') + addBtn;
+        grid.querySelectorAll('.del').forEach(d => { d.onclick = () => { hwPhotos.splice(+d.dataset.i, 1); renderPhotos(); }; });
+        const addEl = root.querySelector('#cl_hw_add');
+        if (addEl) addEl.onclick = async () => { const imgs = await UI.pickImages(6); hwPhotos.push(...imgs); renderPhotos(); };
+      }
+      renderPhotos();
       root.querySelector('#cl_course').onchange = (e) => {
         root.querySelector('#cl_custom_row').style.display = e.target.value === '__custom' ? '' : 'none';
       };
@@ -1600,7 +1728,8 @@ const StudyCenter = {
           date: root.querySelector('#cl_date').value,
           attendance: root.querySelector('#cl_attendance').value,
           content: root.querySelector('#cl_content').value.trim(),
-          homework: root.querySelector('#cl_homework').value.trim()
+          homework: root.querySelector('#cl_homework').value.trim(),
+          homeworkPhotos: hwPhotos
         };
         if (isEdit) {
           const old = await db.get(db.STORES.classLog, editId);
@@ -1628,6 +1757,11 @@ const StudyCenter = {
             root.querySelector('#cl_attendance').value = l.attendance || 'present';
             root.querySelector('#cl_content').value = l.content || '';
             root.querySelector('#cl_homework').value = l.homework || '';
+            // 加载已有作业照片
+            if (l.homeworkPhotos && l.homeworkPhotos.length > 0) {
+              hwPhotos = [...l.homeworkPhotos];
+              renderPhotos();
+            }
           }
         })();
       }
@@ -2147,17 +2281,101 @@ const StudyCenter = {
       const isToday = date === UI.todayStr();
       html += `<div class="sc-news-date">${isToday ? '今日' : date} · ${items.length} 条</div>`;
       html += items.map((n, i) => `
-        <div class="sc-news-item">
-          <div class="sc-news-rank">${i + 1}</div>
-          <div class="sc-news-content">
-            <div class="sc-news-headline">${n.title}</div>
-            ${n.summary ? `<div class="sc-news-summary">${n.summary}</div>` : ''}
-            ${n.source ? `<div class="sc-news-source">来源：${n.source}</div>` : ''}
+        <div class="sc-news-item" style="position:relative;overflow:hidden;" data-news-id="${n.id}">
+          <div class="sc-news-content" style="transition:transform 0.2s;display:flex;gap:10px;">
+            <div class="sc-news-rank">${i + 1}</div>
+            <div style="flex:1;">
+              <div class="sc-news-headline">${n.title}</div>
+              ${n.summary ? `<div class="sc-news-summary">${n.summary}</div>` : ''}
+              ${n.source ? `<div class="sc-news-source">来源：${n.source}</div>` : ''}
+            </div>
           </div>
+          <button class="sc-news-action" style="position:absolute;right:0;top:0;bottom:0;width:80px;background:var(--forest);color:var(--paper-light);font-size:12px;border:none;opacity:0;transition:opacity 0.2s;">科普口播</button>
         </div>
       `).join('');
     }
     el.innerHTML = html;
+
+    // 添加触摸滑动事件和口播按钮绑定
+    el.querySelectorAll('.sc-news-item').forEach(item => {
+      let startX = 0, currentX = 0, isDragging = false;
+      const content = item.querySelector('.sc-news-content');
+      const actionBtn = item.querySelector('.sc-news-action');
+
+      item.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        isDragging = true;
+      });
+      item.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        currentX = e.touches[0].clientX;
+        let diff = currentX - startX;
+        if (diff > 0) diff = 0;
+        if (diff < -80) diff = -80;
+        content.style.transform = `translateX(${diff}px)`;
+        if (actionBtn) actionBtn.style.opacity = Math.min(1, -diff / 50);
+      });
+      item.addEventListener('touchend', () => {
+        isDragging = false;
+        const diff = currentX - startX;
+        if (diff < -50) {
+          content.style.transform = 'translateX(-80px)';
+          if (actionBtn) actionBtn.style.opacity = '1';
+        } else {
+          content.style.transform = '';
+          if (actionBtn) actionBtn.style.opacity = '0';
+        }
+      });
+
+      // 绑定口播按钮
+      if (actionBtn) {
+        const newsId = item.dataset.newsId;
+        actionBtn.onclick = () => {
+          const newsItem = news.find(n => n.id === newsId);
+          if (newsItem) this.showNewsScript(newsItem);
+        };
+      }
+    });
+  },
+
+  async showNewsScript(news) {
+    // 从缓存查找
+    let cached = await db.query(db.STORES.newsScript, s => s.newsId === news.id);
+    if (cached.length > 0) {
+      this.displayScriptSheet(cached[0].text);
+      return;
+    }
+    UI.toast('正在生成科普文案...');
+    try {
+      const prompt = `基于以下新闻，生成一段约300字的科普短视频口播文案。要求通俗易懂、引人入胜，适合短视频口播风格。\n\n新闻：${news.title}\n摘要：${news.summary}\n\n请直接输出文案内容，不要加标题。`;
+      const text = await AI._callOnline(prompt, '');
+      const cleaned = AI._stripCodeFence ? AI._stripCodeFence(text) : text.replace(/```[\s\S]*?```/g, '').trim();
+      await db.add(db.STORES.newsScript, { newsId: news.id, title: news.title, text: cleaned, date: UI.todayStr() });
+      this.displayScriptSheet(cleaned);
+    } catch (e) {
+      UI.toast('生成失败');
+    }
+  },
+
+  displayScriptSheet(text) {
+    const body = `
+      <div style="font-size:14px;color:var(--ink-soft);line-height:1.8;white-space:pre-wrap;">${text}</div>
+      <div class="form-actions" style="margin-top:16px;">
+        <button class="btn btn-primary" id="copyScript" style="flex:1;">📋 一键复制</button>
+      </div>`;
+    UI.showSheet('科普口播文案', body, (root) => {
+      root.querySelector('#copyScript').onclick = () => {
+        navigator.clipboard.writeText(text).then(() => UI.toast('已复制到剪贴板')).catch(() => {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+          UI.toast('已复制到剪贴板');
+        });
+      };
+    });
   },
 
   async fetchNews() {
@@ -2165,9 +2383,9 @@ const StudyCenter = {
     try {
       const prompt = `请生成今日（${UI.todayStr()}）的 10 条新闻热点。
 要求：
-1. 涵盖国内外重要新闻、科技、社会、财经等领域
+1. 优先推送时政新闻和法律类内容（至少 6 条），其余涵盖科技、社会、财经等
 2. 每条新闻包含标题和简短摘要（50字以内）
-3. 返回纯 JSON 数组格式，每条格式为：{"title":"标题","summary":"摘要","source":"来源"}
+3. 返回纯 JSON 数组格式，每条格式为：{"title":"标题","summary":"摘要","source":"来源","category":"分类"}
 4. 只返回 JSON 数组，不要其他文字`;
 
       const resp = await AI._callOnline(prompt, '');

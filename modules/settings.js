@@ -63,6 +63,12 @@ router.register('settings', () => {
         </div>
       </div>
 
+      <div class="section-title">🧭 导航栏管理</div>
+      <div class="card" style="padding:12px;margin-bottom:16px;">
+        <div style="font-size:11px;color:var(--ink-mute);margin-bottom:10px;">拖拽调整顺序，开关控制显示</div>
+        <div id="navManager"></div>
+      </div>
+
       <div class="section-title">🔔 每日提醒</div>
       <div id="notifySettings"></div>
 
@@ -99,6 +105,98 @@ router.register('settings', () => {
 
   // 渲染提醒设置
   Notify.renderSettings(main.querySelector('#notifySettings'));
+
+  // 渲染导航栏管理
+  (function renderNavManager() {
+    const allNavItems = App.navItems;
+    const config = localStorage.getItem('navConfig');
+    let order = null, hidden = [];
+    if (config) {
+      try {
+        const c = JSON.parse(config);
+        order = c.order;
+        hidden = c.hidden || [];
+      } catch(e) {}
+    }
+
+    const sorted = order
+      ? [...allNavItems].sort((a, b) => {
+          const ai = order.indexOf(a.key);
+          const bi = order.indexOf(b.key);
+          return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+        })
+      : [...allNavItems];
+
+    const navManagerEl = document.getElementById('navManager');
+    if (!navManagerEl) return;
+
+    function renderList(items) {
+      navManagerEl.innerHTML = items.map((item) => {
+        const isHome = item.key === 'home';
+        const isHidden = hidden.includes(item.key);
+        return `
+          <div class="sc-nav-item ${isHome ? 'fixed' : ''}" draggable="true" data-key="${item.key}" style="display:flex;align-items:center;gap:10px;padding:10px 8px;border-radius:8px;margin-bottom:4px;background:var(--paper-card);border:1px solid var(--ink-line);">
+            <span style="cursor:grab;font-size:16px;opacity:0.5;">⠿</span>
+            <span style="font-size:16px;">${item.icon}</span>
+            <span style="flex:1;font-size:14px;">${item.label}</span>
+            <label class="toggle-switch ${isHidden ? '' : 'active'}" style="${isHome ? 'opacity:0.4;pointer-events:none;' : ''}">
+              <input type="checkbox" class="nav-toggle" data-key="${item.key}" ${isHidden ? '' : 'checked'}>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        `;
+      }).join('');
+    }
+
+    renderList(sorted);
+
+    // 拖拽排序
+    let dragItem = null;
+    navManagerEl.querySelectorAll('.sc-nav-item').forEach(item => {
+      item.addEventListener('dragstart', (e) => {
+        dragItem = item;
+        item.style.opacity = '0.4';
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      item.addEventListener('dragend', () => {
+        if (dragItem) dragItem.style.opacity = '1';
+        dragItem = null;
+        const newOrder = [...navManagerEl.querySelectorAll('.sc-nav-item')].map(el => el.dataset.key);
+        saveNavConfig(newOrder, hidden);
+      });
+      item.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (dragItem && dragItem !== item) {
+          const rect = item.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          if (e.clientY < midY) {
+            navManagerEl.insertBefore(dragItem, item);
+          } else {
+            navManagerEl.insertBefore(dragItem, item.nextSibling);
+          }
+        }
+      });
+    });
+
+    // 显示/隐藏开关
+    navManagerEl.querySelectorAll('.nav-toggle').forEach(toggle => {
+      toggle.addEventListener('change', () => {
+        const key = toggle.dataset.key;
+        if (toggle.checked) {
+          hidden = hidden.filter(k => k !== key);
+        } else {
+          if (!hidden.includes(key)) hidden.push(key);
+        }
+        const newOrder = [...navManagerEl.querySelectorAll('.sc-nav-item')].map(el => el.dataset.key);
+        saveNavConfig(newOrder, hidden);
+      });
+    });
+
+    function saveNavConfig(order, hidden) {
+      localStorage.setItem('navConfig', JSON.stringify({ order, hidden }));
+      if (App.renderNav) App.renderNav();
+    }
+  })();
 
   main.querySelectorAll('[data-prov]').forEach((b) => {
     b.onclick = () => {

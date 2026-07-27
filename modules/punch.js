@@ -6,7 +6,7 @@ const Punch = {
   categories: ['美食', '咖啡', '茶饮', '甜品', '景点', '展览', '书店', '酒吧', '其他'],
 
   async list() {
-    App.setActiveNav('more');
+    App.setActiveNav('punch');
     const main = document.getElementById('appMain');
     main.innerHTML = `
       <div class="fade-up">

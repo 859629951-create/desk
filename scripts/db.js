@@ -4,7 +4,7 @@
    ============================================ */
 
 const DB_NAME = 'deskDB';
-const DB_VERSION = 4;
+const DB_VERSION = 8;
 
 const STORES = {
   study: 'study', // 学习清单
@@ -42,7 +42,12 @@ const STORES = {
   travelPlan: 'travelPlan', // 旅行行程计划（多天行程项）
   // ===== 存钱罐 =====
   savings: 'savings', // 存钱罐
-  savingsLog: 'savingsLog' // 存钱罐存入/取出记录
+  savingsLog: 'savingsLog', // 存钱罐存入/取出记录
+  // ===== v8 新增 =====
+  languageTask: 'languageTask', // 语言学习任务（自由文本+频次+优先级）
+  dailyTodo: 'dailyTodo',       // 每日待办事项
+  newsScript: 'newsScript',     // 新闻科普口播文案缓存
+  dailyQuote: 'dailyQuote'      // 每日金句缓存
 };
 
 let _db = null;

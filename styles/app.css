@@ -135,17 +135,20 @@
 .app-nav::before {
   content: '';
   position: absolute;
-  top: -1px;
-  left: 18px;
-  right: 18px;
-  height: 1px;
-  background: repeating-linear-gradient(
-    90deg,
-    var(--ink-line) 0,
-    var(--ink-line) 4px,
-    transparent 4px,
-    transparent 8px
-  );
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px) / var(--nav-count, 5));
+  background: rgba(47, 74, 40, 0.06);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 16px;
+  border: 1px solid rgba(47, 74, 40, 0.05);
+  box-shadow: 0 2px 16px rgba(47, 74, 40, 0.06), inset 0 1px 0 rgba(255,255,255,0.1);
+  transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  pointer-events: none;
+  z-index: 0;
+  transform: translateX(calc(var(--nav-slider-index, 0) * 100%));
 }
 
 .nav-item {
@@ -161,6 +164,7 @@
   font-weight: 600;
   transition: color 0.2s;
   position: relative;
+  z-index: 1;
   min-width: 0;
 }
 .nav-item .nav-icon {
@@ -173,16 +177,6 @@
 .nav-item.active .nav-icon {
   transform: translateY(-2px) scale(1.15);
 }
-.nav-item.active::after {
-  content: '';
-  position: absolute;
-  bottom: 5px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--forest);
-}
-
 /* ===== 仪表盘首页 ===== */
 .dash-hero {
   background: linear-gradient(135deg, var(--forest) 0%, var(--forest-deep) 100%);
@@ -416,6 +410,39 @@
   color: var(--gold-light);
   font-size: 18px;
   margin: 0 2px;
+}
+.dh-quote {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  backdrop-filter: blur(4px);
+}
+.dh-quote-text {
+  font-family: 'Long Cang', cursive;
+  font-size: 15px;
+  color: var(--gold-light);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  line-height: 1.5;
+  letter-spacing: 1px;
+}
+.dh-quote-refresh {
+  font-size: 12px;
+  opacity: 0.6;
+  padding: 4px;
+  transition: opacity 0.2s, transform 0.3s;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.dh-quote-refresh:active {
+  opacity: 1;
+  transform: rotate(180deg);
 }
 
 /* 今日待办速览 */
@@ -3092,6 +3119,20 @@
   color: var(--ink-mute);
   margin-top: 4px;
 }
+.sc-news-action {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 80px;
+  background: var(--forest);
+  color: var(--paper-light);
+  font-size: 12px;
+  border: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  cursor: pointer;
+}
 
 /* ============================================
    存钱罐样式
@@ -3309,4 +3350,36 @@
   font-size: 11px;
   color: var(--ink-mute);
   margin-top: 2px;
+}
+
+/* ===== Toggle Switch ===== */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--ink-line);
+  border-radius: 22px;
+  transition: 0.3s;
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 16px; width: 16px;
+  left: 3px; bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+.toggle-switch.active .toggle-slider {
+  background: var(--forest);
+}
+.toggle-switch.active .toggle-slider::before {
+  transform: translateX(18px);
 }

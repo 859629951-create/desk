@@ -70,6 +70,11 @@ const Recipe = {
             const ing = await db.get(db.STORES.recipeIngredients, c.dataset.ing);
             ing.have = true;
             await db.put(db.STORES.recipeIngredients, ing);
+            // 同步移除待办购物清单
+            const existing = await db.query(db.STORES.dailyTodo, t => t.source === 'recipe_ingredient' && t.sourceId === ing.id && !t.done);
+            for (const t of existing) {
+              await db.remove(db.STORES.dailyTodo, t.id);
+            }
             refresh();
           };
         });
@@ -246,7 +251,7 @@ const Recipe = {
               <span class="chip ${i.have ? 'green' : 'red'}" data-idx="${idx}">${i.have ? '✓' : '○'} ${i.name}</span>
             `).join('')}
           </div>
-          <div style="font-size:11px;color:var(--ink-mute);margin-top:4px">点击原料标记已有/待买</div>
+          <div style="font-size:11px;color:var(--ink-mute);margin-top:4px">点击原料切换已备/缺少状态</div>
           ${extractedSteps.length ? `
             <div class="section-title">👨‍🍳 做法步骤</div>
             <ol style="font-size:13px;color:var(--ink-soft);padding-left:18px;line-height:1.8;">
@@ -279,8 +284,8 @@ const Recipe = {
           .slice(0, 10);
         const hint = await AI.generate('请帮我整理这道菜谱的原料清单和做法步骤', text);
         extractedIngredients = ings.map((n) => {
-          if (typeof n === 'string') return { name: n, have: false };
-          return { name: n.name || String(n), have: n.have || false };
+          if (typeof n === 'string') return { name: n, have: true };
+          return { name: n.name || String(n), have: true };
         });
         extractedSteps = steps;
         renderExtracted();
@@ -443,6 +448,27 @@ const Recipe = {
             const ing = await db.get(db.STORES.recipeIngredients, row.dataset.ing);
             ing.have = !ing.have;
             await db.put(db.STORES.recipeIngredients, ing);
+            // 同步待办购物清单：标记待买时添加，标记已备时移除
+            const today = UI.todayStr();
+            if (!ing.have) {
+              // 检查是否已存在
+              const existing = await db.query(db.STORES.dailyTodo, t => t.source === 'recipe_ingredient' && t.sourceId === ing.id);
+              if (existing.length === 0) {
+                await db.add(db.STORES.dailyTodo, {
+                  text: `🛒 买${ing.name}（${r.name}）`,
+                  source: 'recipe_ingredient',
+                  sourceId: ing.id,
+                  date: today,
+                  done: false
+                });
+              }
+            } else {
+              // 移除对应的待办
+              const existing = await db.query(db.STORES.dailyTodo, t => t.source === 'recipe_ingredient' && t.sourceId === ing.id && !t.done);
+              for (const t of existing) {
+                await db.remove(db.STORES.dailyTodo, t.id);
+              }
+            }
             renderIngs();
           };
         });
@@ -451,9 +477,21 @@ const Recipe = {
 
       main.querySelector('#markAllBuy').onclick = async () => {
         const ings = await db.query(db.STORES.recipeIngredients, (i) => i.recipeId === id);
+        const today = UI.todayStr();
         for (const i of ings) {
           i.have = false;
           await db.put(db.STORES.recipeIngredients, i);
+          // 同步待办购物清单
+          const existing = await db.query(db.STORES.dailyTodo, t => t.source === 'recipe_ingredient' && t.sourceId === i.id);
+          if (existing.length === 0) {
+            await db.add(db.STORES.dailyTodo, {
+              text: `🛒 买${i.name}（${r.name}）`,
+              source: 'recipe_ingredient',
+              sourceId: i.id,
+              date: today,
+              done: false
+            });
+          }
         }
         renderIngs();
         UI.toast('已标记为全部待买');
@@ -463,6 +501,11 @@ const Recipe = {
         for (const i of ings) {
           i.have = true;
           await db.put(db.STORES.recipeIngredients, i);
+          // 移除对应的待办
+          const existing = await db.query(db.STORES.dailyTodo, t => t.source === 'recipe_ingredient' && t.sourceId === i.id && !t.done);
+          for (const t of existing) {
+            await db.remove(db.STORES.dailyTodo, t.id);
+          }
         }
         renderIngs();
         UI.toast('已标记为全部已备');

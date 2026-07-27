@@ -32,7 +32,11 @@ router.register('home', () => {
           <div class="dh-stat-vline"></div>
           <div class="dh-stat"><span class="num">·</span><span class="label">待办</span></div>
           <div class="dh-stat-vline"></div>
-          <div class="dh-stat"><span class="num">·</span><span class="label">待买</span></div>
+          <div class="dh-stat"><span class="num">·</span><span class="label">购物</span></div>
+        </div>
+        <div class="dh-quote" id="dailyQuoteBar">
+          <span class="dh-quote-text" id="quoteText">加载中...</span>
+          <button class="dh-quote-refresh" id="quoteRefresh" title="换一条">🔄</button>
         </div>
       </div>
 
@@ -40,7 +44,10 @@ router.register('home', () => {
       <div class="todo-preview" id="todoPreview">
         <div class="tp-head">
           <span class="tp-title">今日待办</span>
-          <span class="tp-count" id="todoCount">0</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="tp-count" id="todoCount">0</span>
+            <button id="addTodoBtn" style="width:24px;height:24px;border-radius:50%;border:1.5px solid var(--ink-line);background:var(--paper-card);color:var(--ink);font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;">+</button>
+          </div>
         </div>
         <div class="tp-list" id="todoList">
           <div class="tp-loading">加载中...</div>
@@ -150,7 +157,7 @@ router.register('home', () => {
 
   // 异步加载各模块数据
   (async () => {
-    const [studies, accounts, logs, travels, recipes, ings, museums, relics, works, punchs, interests, pets] = await Promise.all([
+    const [studies, accounts, logs, travels, recipes, ings, museums, relics, works, punchs, interests, pets, dailyTodos] = await Promise.all([
       db.all(db.STORES.study),
       db.all(db.STORES.account),
       db.all(db.STORES.accountLog),
@@ -162,7 +169,8 @@ router.register('home', () => {
       db.all(db.STORES.work),
       db.all(db.STORES.punch),
       db.all(db.STORES.interest),
-      db.all(db.STORES.pet)
+      db.all(db.STORES.pet),
+      db.all(db.STORES.dailyTodo)
     ]);
 
     // 今日待办速览 - 汇总各模块待办
@@ -207,15 +215,16 @@ router.register('home', () => {
       });
     });
 
-    // 打卡清单：未完成
-    punchs.filter((p) => !p.done).slice(0, 2).forEach((p) => {
+    // 手动待办：今日未完成的
+    dailyTodos.filter((d) => d.date === today && !d.done).slice(0, 5).forEach((d) => {
       todos.push({
-        icon: '📍',
-        text: p.name,
-        sub: '想去打卡',
-        route: 'punch',
-        done: false,
-        sort: 4
+        icon: '📝',
+        text: d.text,
+        sub: '手动待办',
+        route: null,
+        done: d.done,
+        sort: 0,
+        manualId: d.id
       });
     });
 
@@ -238,7 +247,7 @@ router.register('home', () => {
         .slice(0, 5)
         .map(
           (t) => `
-        <div class="tp-item ${t.done ? 'done' : ''}" data-route="${t.route}">
+        <div class="tp-item ${t.done ? 'done' : ''}" data-route="${t.route || ''}" data-manual-id="${t.manualId || ''}" style="cursor:${t.manualId ? 'pointer' : 'pointer'};">
           <span class="tp-dot ${t.done ? 'done' : ''}">${t.done ? '✓' : ''}</span>
           <div class="tp-content">
             <span class="tp-text">${t.text}</span>
@@ -250,8 +259,59 @@ router.register('home', () => {
         .join('');
 
       todoListEl.querySelectorAll('.tp-item').forEach((item) => {
-        item.onclick = () => router.navigate(item.dataset.route);
+        item.onclick = () => {
+          if (item.dataset.manualId) {
+            // 手动待办：点击标记完成
+            const id = item.dataset.manualId;
+            db.get(db.STORES.dailyTodo, id).then(record => {
+              if (record) {
+                record.done = true;
+                db.put(db.STORES.dailyTodo, record);
+                item.classList.add('done');
+                item.querySelector('.tp-dot').textContent = '✓';
+                item.querySelector('.tp-dot').classList.add('done');
+                const undoneCount = todoListEl.querySelectorAll('.tp-item:not(.done)').length;
+                const todoCountEl = document.getElementById('todoCount');
+                if (todoCountEl) todoCountEl.textContent = undoneCount;
+              }
+            });
+          } else if (item.dataset.route) {
+            router.navigate(item.dataset.route);
+          }
+        };
       });
+    }
+
+    // 添加手动待办按钮
+    const addTodoBtn = document.getElementById('addTodoBtn');
+    if (addTodoBtn) {
+      addTodoBtn.onclick = () => {
+        const body = `
+          <div style="padding:8px;">
+            <textarea id="newTodoText" class="field" rows="3" placeholder="输入待办事项..." style="width:100%;resize:none;margin-bottom:12px;"></textarea>
+            <button class="btn btn-primary" id="saveTodoBtn" style="width:100%;">添加</button>
+          </div>
+        `;
+        UI.showSheet('新增待办', body, (root) => {
+          root.querySelector('#saveTodoBtn').onclick = async () => {
+            const text = root.querySelector('#newTodoText').value.trim();
+            if (!text) {
+              UI.toast('请输入待办内容');
+              return;
+            }
+            await db.add(db.STORES.dailyTodo, {
+              text: text,
+              date: UI.todayStr(),
+              done: false,
+              createdAt: Date.now()
+            });
+            UI.hideSheet();
+            UI.toast('已添加待办');
+            // 重新加载首页以刷新待办列表
+            router.navigate('home');
+          };
+        });
+      };
     }
 
     // Hero 统计
@@ -263,7 +323,7 @@ router.register('home', () => {
       <div class="dh-stat-vline"></div>
       <div class="dh-stat"><span class="num">${workTodo}</span><span class="label">待办</span></div>
       <div class="dh-stat-vline"></div>
-      <div class="dh-stat"><span class="num">${buyTodo}</span><span class="label">待买</span></div>
+      <div class="dh-stat"><span class="num">${buyTodo}</span><span class="label">购物</span></div>
     `;
 
     // 学习卡片 - 大卡
@@ -359,4 +419,62 @@ router.register('home', () => {
       }
     }
   })();
+
+  // 每日金句
+  (async () => {
+    const today = UI.todayStr();
+    const quoteEl = document.getElementById('quoteText');
+    if (!quoteEl) return;
+    // 尝试从缓存获取
+    try {
+      const cached = await db.query(db.STORES.dailyQuote, q => q.date === today);
+      if (cached.length > 0) {
+        quoteEl.textContent = cached[0].text;
+        return;
+      }
+    } catch(e) {}
+    // 本地备用金句
+    const fallback = ['日拱一卒，功不唐捐','不积跬步，无以至千里','腹有诗书气自华','业精于勤，荒于嬉','博学之，审问之，慎思之，明辨之，笃行之','路漫漫其修远兮，吾将上下而求索','天行健，君子以自强不息','知之者不如好之者，好之者不如乐之者','学而不思则罔，思而不学则殆','千里之行，始于足下'];
+    const d = new Date();
+    const dayOfYear = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
+    quoteEl.textContent = fallback[dayOfYear % fallback.length];
+    // 尝试 AI 生成
+    quoteEl.textContent = '✨ 获取中...';
+    try {
+      const prompt = '请随机生成一条经典金句（古今诗词、古文名句或中外哲理格言）。要求：1.积极向上 2.不超过30字 3.标注出处。返回JSON：{"text":"金句","source":"出处"}';
+      const resp = await AI._callOnline(prompt, '');
+      const cleaned = (AI._stripCodeFence ? AI._stripCodeFence(resp) : resp).trim();
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (match) {
+        const data = JSON.parse(match[0]);
+        quoteEl.textContent = data.text;
+        try {
+          await db.add(db.STORES.dailyQuote, { text: data.text, source: data.source || '', date: today });
+        } catch(e) {}
+      } else {
+        quoteEl.textContent = fallback[dayOfYear % fallback.length];
+      }
+    } catch(e) {
+      quoteEl.textContent = fallback[dayOfYear % fallback.length];
+    }
+  })();
+
+  document.getElementById('quoteRefresh').onclick = async () => {
+    const quoteEl = document.getElementById('quoteText');
+    quoteEl.textContent = '✨ 换一条...';
+    try {
+      const prompt = '请随机生成一条经典金句（古今诗词、古文名句或中外哲理格言）。要求：1.积极向上 2.不超过30字 3.标注出处。返回JSON：{"text":"金句","source":"出处"}';
+      const resp = await AI._callOnline(prompt, '');
+      const cleaned = (AI._stripCodeFence ? AI._stripCodeFence(resp) : resp).trim();
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (match) {
+        const data = JSON.parse(match[0]);
+        quoteEl.textContent = data.text;
+      } else {
+        quoteEl.textContent = '换个时间再试试';
+      }
+    } catch(e) {
+      quoteEl.textContent = '换个时间再试试';
+    }
+  };
 });
