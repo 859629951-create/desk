@@ -2204,10 +2204,10 @@ const StudyCenter = {
             for (let r = 1; r < rowspan; r++) {
               occupied.add(`${d}-${p + r}`);
             }
-            html += `<td class="sc-ct-cell has-course merged" rowspan="${rowspan}" data-cid="${course.id}" data-day="${d}" data-period="${p+1}" style="background:${course.color || 'var(--forest-mist)'};border-color:${course.color || 'var(--forest)'};vertical-align:middle;color:${this._contrastTextColor(course.color || '#2f4a28')};">
-              <div class="sc-ct-cname" style="color:inherit;">${course.name}</div>
-              ${course.teacher ? `<div class="sc-ct-cteacher" style="color:inherit;">${course.teacher}</div>` : ''}
-              ${course.location ? `<div class="sc-ct-cloc" style="color:inherit;">📍${course.location}</div>` : ''}
+            html += `<td class="sc-ct-cell has-course merged" rowspan="${rowspan}" data-cid="${course.id}" data-day="${d}" data-period="${p+1}" style="background:${course.color || 'var(--forest-mist)'};border-color:${course.color || 'var(--forest)'};vertical-align:middle;">
+              <div class="sc-ct-cname">${course.name}</div>
+              ${course.teacher ? `<div class="sc-ct-cteacher">${course.teacher}</div>` : ''}
+              ${course.location ? `<div class="sc-ct-cloc">📍${course.location}</div>` : ''}
             </td>`;
           }
           // 如果不是起始行但课程存在，说明逻辑有问题，跳过（已被 occupied 处理）
@@ -2466,19 +2466,6 @@ const StudyCenter = {
       return Math.round(255 * color).toString(16).padStart(2, '0');
     };
     return `#${f(0)}${f(8)}${f(4)}`;
-  },
-
-  /* 根据背景色计算对比文字颜色（深背景用白字，浅背景用黑字） */
-  _contrastTextColor(hex) {
-    if (!hex || hex.startsWith('var(')) return '#fff';
-    const c = hex.replace('#', '');
-    if (c.length < 6) return '#fff';
-    const r = parseInt(c.substring(0, 2), 16);
-    const g = parseInt(c.substring(2, 4), 16);
-    const b = parseInt(c.substring(4, 6), 16);
-    // 相对亮度
-    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-    return lum > 150 ? '#1a1a1a' : '#ffffff';
   },
 
   /* 上课记录 */
