@@ -2256,7 +2256,6 @@ const StudyCenter = {
 
   addCourse(editId, preset) {
     const isEdit = !!editId;
-    const colors = ['#2f4a28', '#5a7a52', '#b8923a', '#a05a3a', '#3a4a5b', '#8a6a1f', '#5a8a6a'];
     const body = `
       <div class="form-row">
         <label class="label">课程名称</label>
@@ -2296,8 +2295,12 @@ const StudyCenter = {
       </div>
       <div class="form-row">
         <label class="label">颜色标记</label>
-        <div class="sc-color-picker" id="cs_colors">
-          ${colors.map((c, i) => `<label class="sc-cp-item"><input type="radio" name="color" value="${c}" ${i === 0 ? 'checked' : ''}><span style="background:${c}"></span></label>`).join('')}
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div class="sc-hue-wheel" id="cs_hue_wheel"></div>
+          <div class="sc-hue-preview" id="cs_hue_preview" style="background:#2f4a28;">
+            <span class="sc-hue-hex" id="cs_hue_hex">#2f4a28</span>
+          </div>
+          <input type="hidden" id="cs_color_val" value="#2f4a28">
         </div>
       </div>
       <div class="form-actions">
@@ -2306,6 +2309,19 @@ const StudyCenter = {
       </div>
     `;
     UI.showSheet(isEdit ? '编辑课程' : '添加课程', body, (root) => {
+      // 初始化色轮
+      const wheel = root.querySelector('#cs_hue_wheel');
+      const preview = root.querySelector('#cs_hue_preview');
+      const hexLabel = root.querySelector('#cs_hue_hex');
+      const hiddenInput = root.querySelector('#cs_color_val');
+      this._initHueWheel(wheel, 160, (hue) => {
+        const color = `hsl(${hue}, 55%, 38%)`;
+        const hex = this._hslToHex(hue, 55, 38);
+        preview.style.background = color;
+        hexLabel.textContent = hex;
+        hiddenInput.value = hex;
+      });
+
       root.querySelector('#cs_save').onclick = async () => {
         const name = root.querySelector('#cs_name').value.trim();
         if (!name) return UI.toast('请输入课程名称');
@@ -2313,7 +2329,7 @@ const StudyCenter = {
         const weekType = root.querySelector('#cs_weektype').value;
         const periods = Array.from(root.querySelectorAll('#cs_periods input:checked')).map(i => parseInt(i.value));
         if (periods.length === 0) return UI.toast('请选择至少一节课');
-        const color = root.querySelector('#cs_colors input:checked').value;
+        const color = hiddenInput.value;
         const payload = {
           name,
           teacher: root.querySelector('#cs_teacher').value.trim(),
@@ -2345,8 +2361,9 @@ const StudyCenter = {
               if (cb) cb.checked = true;
             });
             if (c.color) {
-              const radio = root.querySelector(`#cs_colors input[value="${c.color}"]`);
-              if (radio) radio.checked = true;
+              hiddenInput.value = c.color;
+              preview.style.background = c.color;
+              hexLabel.textContent = c.color;
             }
           }
         })();
@@ -2357,6 +2374,104 @@ const StudyCenter = {
         if (cb) cb.checked = true;
       }
     });
+  },
+
+  /* 初始化色轮 */
+  _initHueWheel(container, size, onPick) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size * 2; canvas.height = size * 2;
+    canvas.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;cursor:crosshair;display:block;`;
+    container.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    const cx = size, cy = size, r = size - 8;
+
+    // 画色轮
+    for (let angle = 0; angle < 360; angle++) {
+      const startAngle = (angle - 1) * Math.PI / 180;
+      const endAngle = (angle + 1) * Math.PI / 180;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, r, startAngle, endAngle);
+      ctx.closePath();
+      ctx.fillStyle = `hsl(${angle}, 55%, 38%)`;
+      ctx.fill();
+    }
+    // 中间挖白圆
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2);
+    ctx.fillStyle = '#faf5ec';
+    ctx.fill();
+
+    // 画指示点
+    let indicatorAngle = 150; // 默认 ~#2f4a28
+    function drawIndicator(hue) {
+      const a = (hue - 90) * Math.PI / 180;
+      const ir = r * 0.72;
+      const ix = cx + ir * Math.cos(a);
+      const iy = cy + ir * Math.sin(a);
+      ctx.beginPath();
+      ctx.arc(ix, iy, 7, 0, Math.PI * 2);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(ix, iy, 7, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    // 初始绘制完整色轮 + 指示器
+    function redrawWheel() {
+      for (let angle = 0; angle < 360; angle++) {
+        const startAngle = (angle - 1) * Math.PI / 180;
+        const endAngle = (angle + 1) * Math.PI / 180;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, startAngle, endAngle);
+        ctx.closePath();
+        ctx.fillStyle = `hsl(${angle}, 55%, 38%)`;
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2);
+      ctx.fillStyle = '#faf5ec';
+      ctx.fill();
+    }
+    redrawWheel();
+    drawIndicator(indicatorAngle);
+
+    // 点击选色
+    function pick(e) {
+      const rect = canvas.getBoundingClientRect();
+      const x = (e.clientX || e.touches[0].clientX) - rect.left - rect.width / 2;
+      const y = (e.clientY || e.touches[0].clientY) - rect.top - rect.height / 2;
+      let angle = Math.atan2(y, x) * 180 / Math.PI + 90;
+      if (angle < 0) angle += 360;
+      const dist = Math.sqrt(x * x + y * y);
+      const maxDist = r * 0.45 / (rect.width / 2) * canvas.width / 2;
+      const minDist = r * 0.45 / (rect.width / 2) * canvas.width / 2;
+      // 只响应色环区域点击
+      const normDist = dist / (rect.width / 2);
+      if (normDist < 0.45 || normDist > 1) return;
+      indicatorAngle = angle;
+      redrawWheel();
+      drawIndicator(indicatorAngle);
+      onPick(Math.round(angle));
+    }
+    canvas.addEventListener('click', pick);
+    canvas.addEventListener('touchend', (e) => { e.preventDefault(); pick(e); });
+  },
+
+  /* HSL 转 HEX */
+  _hslToHex(h, s, l) {
+    s /= 100; l /= 100;
+    const a = s * Math.min(l, 1 - l);
+    const f = n => {
+      const k = (n + h / 30) % 12;
+      const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+      return Math.round(255 * color).toString(16).padStart(2, '0');
+    };
+    return `#${f(0)}${f(8)}${f(4)}`;
   },
 
   /* 上课记录 */
