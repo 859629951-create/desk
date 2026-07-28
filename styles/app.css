@@ -3158,6 +3158,56 @@
   cursor: pointer;
 }
 
+/* LEC 术语卡片 */
+.sc-term-item {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--paper-card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ink-line);
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.sc-term-item:active {
+  background: var(--paper-deep);
+  border-color: var(--forest);
+}
+.sc-term-num {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink-line);
+  line-height: 1;
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+  padding-top: 2px;
+}
+.sc-term-body {
+  flex: 1;
+}
+.sc-term-en {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.4;
+  font-family: var(--font-display);
+}
+.sc-term-meta {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.sc-term-cn {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
 /* ============================================
    存钱罐样式
    ============================================ */

@@ -3205,8 +3205,8 @@ const StudyCenter = {
     el.innerHTML = `
       <div class="sc-news-header">
         <div class="sc-news-info">
-          <div class="sc-news-title">📰 每日新闻热点</div>
-          <div class="sc-news-sub">${todayNews.length > 0 ? `今日已更新 ${todayNews.length} 条` : '点击刷新获取今日热点'}</div>
+          <div class="sc-news-title">⚖️ 每日 LEC 术语</div>
+          <div class="sc-news-sub">${todayNews.length > 0 ? `今日已更新 ${todayNews.length} 个` : '点击刷新获取今日术语'}</div>
         </div>
         <button class="btn btn-primary" id="refreshNews" style="font-size:12px;padding:8px 14px;">🔄 刷新</button>
       </div>
@@ -3222,7 +3222,7 @@ const StudyCenter = {
     const el = document.getElementById('newsList');
     if (!el) return;
     if (news.length === 0) {
-      el.innerHTML = `<div class="empty"><div class="emoji">📰</div><div class="hint">点击「刷新」获取今日新闻热点</div></div>`;
+      el.innerHTML = `<div class="empty"><div class="emoji">⚖️</div><div class="hint">点击「刷新」获取今日 LEC 法律英语术语</div></div>`;
       return;
     }
     // 按日期分组
@@ -3237,95 +3237,52 @@ const StudyCenter = {
     for (const date of dates.slice(0, 7)) {
       const items = grouped[date];
       const isToday = date === UI.todayStr();
-      html += `<div class="sc-news-date">${isToday ? '今日' : date} · ${items.length} 条</div>`;
+      html += `<div class="sc-news-date">${isToday ? '今日' : date} · ${items.length} 个</div>`;
       html += items.map((n, i) => `
-        <div class="sc-news-item" style="position:relative;overflow:hidden;" data-news-id="${n.id}">
-          <div class="sc-news-content" style="transition:transform 0.2s;display:flex;gap:10px;">
-            <div class="sc-news-rank">${i + 1}</div>
-            <div style="flex:1;">
-              <div class="sc-news-headline">${n.title}</div>
-              ${n.summary ? `<div class="sc-news-summary">${n.summary}</div>` : ''}
-              ${n.source ? `<div class="sc-news-source">来源：${n.source}</div>` : ''}
+        <div class="sc-term-item" data-news-id="${n.id}">
+          <div class="sc-term-num">${String(i + 1).padStart(2, '0')}</div>
+          <div class="sc-term-body">
+            <div class="sc-term-en">${n.title}</div>
+            <div class="sc-term-meta">
+              ${n.source ? `<span class="chip blue">${n.source}</span>` : ''}
+              ${n.category ? `<span class="chip gray">${n.category}</span>` : ''}
             </div>
+            ${n.summary ? `<div class="sc-term-cn">${n.summary.substring(0, 60)}${n.summary.length > 60 ? '...' : ''}</div>` : ''}
           </div>
-          <button class="sc-news-action" style="position:absolute;right:0;top:0;bottom:0;width:80px;background:var(--forest);color:var(--paper-light);font-size:12px;border:none;opacity:0;transition:opacity 0.2s;">科普口播</button>
         </div>
       `).join('');
     }
     el.innerHTML = html;
 
-    // 添加触摸滑动事件和口播按钮绑定
-    el.querySelectorAll('.sc-news-item').forEach(item => {
-      let startX = 0, currentX = 0, isDragging = false;
-      const content = item.querySelector('.sc-news-content');
-      const actionBtn = item.querySelector('.sc-news-action');
-
-      item.addEventListener('touchstart', (e) => {
-        startX = e.touches[0].clientX;
-        isDragging = true;
-      });
-      item.addEventListener('touchmove', (e) => {
-        if (!isDragging) return;
-        currentX = e.touches[0].clientX;
-        let diff = currentX - startX;
-        if (diff > 0) diff = 0;
-        if (diff < -80) diff = -80;
-        content.style.transform = `translateX(${diff}px)`;
-        if (actionBtn) actionBtn.style.opacity = Math.min(1, -diff / 50);
-      });
-      item.addEventListener('touchend', () => {
-        isDragging = false;
-        const diff = currentX - startX;
-        if (diff < -50) {
-          content.style.transform = 'translateX(-80px)';
-          if (actionBtn) actionBtn.style.opacity = '1';
-        } else {
-          content.style.transform = '';
-          if (actionBtn) actionBtn.style.opacity = '0';
-        }
-      });
-
-      // 绑定口播按钮
-      if (actionBtn) {
+    // 点击术语卡片查看详情
+    el.querySelectorAll('.sc-term-item').forEach(item => {
+      item.onclick = () => {
         const newsId = item.dataset.newsId;
-        actionBtn.onclick = () => {
-          const newsItem = news.find(n => n.id === newsId);
-          if (newsItem) this.showNewsScript(newsItem);
-        };
-      }
+        const newsItem = news.find(n => n.id === newsId);
+        if (newsItem) this.showTermDetail(newsItem);
+      };
     });
   },
 
-  async showNewsScript(news) {
-    // 从缓存查找
-    let cached = await db.query(db.STORES.newsScript, s => s.newsId === news.id);
-    if (cached.length > 0) {
-      this.displayScriptSheet(cached[0].text);
-      return;
-    }
-    UI.toast('正在生成科普文案...');
-    try {
-      const prompt = `基于以下新闻，生成一段约300字的科普短视频口播文案。要求通俗易懂、引人入胜，适合短视频口播风格。\n\n新闻：${news.title}\n摘要：${news.summary}\n\n请直接输出文案内容，不要加标题。`;
-      const text = await AI._callOnline(prompt, '');
-      const cleaned = AI._stripCodeFence ? AI._stripCodeFence(text) : text.replace(/```[\s\S]*?```/g, '').trim();
-      await db.add(db.STORES.newsScript, { newsId: news.id, title: news.title, text: cleaned, date: UI.todayStr() });
-      this.displayScriptSheet(cleaned);
-    } catch (e) {
-      UI.toast('生成失败');
-    }
-  },
-
-  displayScriptSheet(text) {
+  showTermDetail(term) {
     const body = `
-      <div style="font-size:14px;color:var(--ink-soft);line-height:1.8;white-space:pre-wrap;">${text}</div>
+      <div style="text-align:center;margin-bottom:14px;">
+        <div style="font-family:var(--font-display);font-size:26px;color:var(--ink);margin-bottom:4px;">${term.title}</div>
+        <div class="li-tags" style="justify-content:center;margin-top:8px;">
+          ${term.source ? `<span class="chip blue">${term.source}</span>` : ''}
+          ${term.category ? `<span class="chip gray">${term.category}</span>` : ''}
+        </div>
+      </div>
+      <div style="font-size:14px;color:var(--ink-soft);line-height:1.8;">${term.summary || ''}</div>
       <div class="form-actions" style="margin-top:16px;">
-        <button class="btn btn-primary" id="copyScript" style="flex:1;">📋 一键复制</button>
+        <button class="btn btn-primary" id="copyTerm" style="flex:1;">📋 复制术语</button>
       </div>`;
-    UI.showSheet('科普口播文案', body, (root) => {
-      root.querySelector('#copyScript').onclick = () => {
-        navigator.clipboard.writeText(text).then(() => UI.toast('已复制到剪贴板')).catch(() => {
+    UI.showSheet('术语详情', body, (root) => {
+      const fullText = `${term.title}\n${term.source || ''}  ${term.category || ''}\n${term.summary || ''}`;
+      root.querySelector('#copyTerm').onclick = () => {
+        navigator.clipboard.writeText(fullText).then(() => UI.toast('已复制到剪贴板')).catch(() => {
           const ta = document.createElement('textarea');
-          ta.value = text;
+          ta.value = fullText;
           document.body.appendChild(ta);
           ta.select();
           document.execCommand('copy');
@@ -3337,20 +3294,25 @@ const StudyCenter = {
   },
 
   async fetchNews() {
-    UI.toast('正在获取今日新闻热点...');
+    UI.toast('正在生成今日 LEC 术语...');
     try {
-      const prompt = `请生成今日（${UI.todayStr()}）的 10 条新闻热点。
+      const prompt = `请生成 10 个 LEC（法律英语证书考试）常用法律英语术语。
 要求：
-1. 优先推送时政新闻和法律类内容（至少 6 条），其余涵盖科技、社会、财经等
-2. 每条新闻包含标题和简短摘要（50字以内）
-3. 返回纯 JSON 数组格式，每条格式为：{"title":"标题","summary":"摘要","source":"来源","category":"分类"}
-4. 只返回 JSON 数组，不要其他文字`;
+1. 涵盖合同法、侵权法、公司法、宪法、民事诉讼法、商法、知识产权法等领域
+2. 每个术语包含：
+   - title: 英文术语（首字母大写）
+   - summary: 中文释义（50字以内）+ 法律场景用法例句
+   - source: 词性缩写（如 n. / v. / adj. / phr.）
+   - category: 所属法律领域
+3. 术语难度应覆盖 LEC 考试常见词汇，不要太过基础也不要过于生僻
+4. 返回纯 JSON 数组格式，每条格式为：{"title":"英文术语","summary":"中文释义及用法","source":"词性","category":"法律领域"}
+5. 只返回 JSON 数组，不要其他文字`;
 
       const resp = await AI._callOnline(prompt, '');
       const cleaned = AI._stripCodeFence(resp);
       const match = cleaned.match(/\[[\s\S]*\]/);
       if (!match) {
-        UI.toast('获取失败，请稍后重试');
+        UI.toast('生成失败，请稍后重试');
         return;
       }
       const items = JSON.parse(match[0]);
@@ -3367,15 +3329,16 @@ const StudyCenter = {
         await db.add(db.STORES.news, {
           title: item.title || '',
           summary: item.summary || '',
-          source: item.source || 'AI汇总',
+          source: item.source || '',
+          category: item.category || '',
           date: today
         });
       }
-      UI.toast(`已获取 ${items.length} 条新闻`);
+      UI.toast(`已生成 ${items.length} 个 LEC 术语`);
       this.renderNews();
     } catch (e) {
-      console.error('获取新闻失败', e);
-      UI.toast('获取新闻失败：' + (e.message || '网络错误'));
+      console.error('生成术语失败', e);
+      UI.toast('生成失败：' + (e.message || '网络错误'));
     }
   },
 
