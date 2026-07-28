@@ -3208,6 +3208,50 @@
   line-height: 1.5;
 }
 
+/* 闪卡 */
+.fc-card {
+  min-height: 200px;
+  perspective: 1000px;
+}
+.fc-face {
+  background: var(--paper-card);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius-md);
+  padding: 30px 20px;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(43, 38, 34, 0.06);
+}
+.fc-front {
+  background: linear-gradient(135deg, #faf5ec 0%, #f0e8d8 100%);
+}
+.fc-back {
+  background: linear-gradient(135deg, #e8f0e0 0%, #d0e0c0 100%);
+}
+.fc-en {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 16px;
+  letter-spacing: 0.5px;
+}
+.fc-hint {
+  font-size: 12px;
+  color: var(--ink-mute);
+  margin-top: 20px;
+}
+.fc-cn {
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.7;
+  max-width: 100%;
+}
+
 /* ============================================
    存钱罐样式
    ============================================ */

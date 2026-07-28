@@ -11,7 +11,7 @@ const StudyCenter = {
     { key: 'language', label: '语言', icon: '🌍' },
     { key: 'professional', label: '专业', icon: '📚' },
     { key: 'graduate', label: '研究生', icon: '🎓' },
-    { key: 'news', label: '新闻', icon: '📰' }
+    { key: 'news', label: 'LEC', icon: '⚖️' }
   ],
 
   currentTab: 'language',
@@ -3208,12 +3208,16 @@ const StudyCenter = {
           <div class="sc-news-title">⚖️ 每日 LEC 术语</div>
           <div class="sc-news-sub">${todayNews.length > 0 ? `今日已更新 ${todayNews.length} 个` : '点击刷新获取今日术语'}</div>
         </div>
-        <button class="btn btn-primary" id="refreshNews" style="font-size:12px;padding:8px 14px;">🔄 刷新</button>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-jade" id="vocabBookBtn" style="font-size:12px;padding:8px 12px;">📖 生词本</button>
+          <button class="btn btn-primary" id="refreshNews" style="font-size:12px;padding:8px 14px;">🔄</button>
+        </div>
       </div>
       <div id="newsList"></div>
     `;
 
     document.getElementById('refreshNews').onclick = () => this.fetchNews();
+    document.getElementById('vocabBookBtn').onclick = () => this.showVocabBook();
 
     this.renderNewsList(news);
   },
@@ -3293,6 +3297,227 @@ const StudyCenter = {
     });
   },
 
+  /* ====== 生词本 ====== */
+  async showVocabBook() {
+    const words = await db.all(db.STORES.vocabBook);
+    words.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const mastered = words.filter(w => w.mastered).length;
+
+    const main = document.getElementById('appMain');
+    App.setFab(null);
+    main.innerHTML = `
+      <div class="fade-up">
+        <button class="detail-back" id="vbBack">‹ 返回</button>
+        <div class="card" style="padding:16px;margin-bottom:14px;">
+          <h2 style="font-family:var(--font-display);font-size:20px;margin-bottom:8px;">📖 LEC 生词本</h2>
+          <div class="li-tags">
+            <span class="chip gray">共 ${words.length} 个术语</span>
+            <span class="chip green">已掌握 ${mastered}</span>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:14px;">
+            <button class="btn btn-jade" id="vbFlashcard" style="flex:1;font-size:12px;">🃏 闪卡模式</button>
+            <button class="btn btn-primary" id="vbExportPdf" style="flex:1;font-size:12px;">📄 导出 PDF</button>
+          </div>
+        </div>
+        <div id="vbList"></div>
+        <div style="height:20px;"></div>
+      </div>
+    `;
+
+    document.getElementById('vbBack').onclick = () => { this.currentTab = 'news'; this.list(); };
+    document.getElementById('vbFlashcard').onclick = () => this.startFlashcards(words);
+    document.getElementById('vbExportPdf').onclick = () => this.exportVocabPdf(words);
+
+    this._renderVocabList(words);
+  },
+
+  _renderVocabList(words) {
+    const el = document.getElementById('vbList');
+    if (!el) return;
+    if (words.length === 0) {
+      el.innerHTML = `<div class="empty"><div class="emoji">📖</div><div class="hint">还没有生词，去 LEC 术语页生成一些吧</div></div>`;
+      return;
+    }
+    el.innerHTML = words.map(w => `
+      <div class="sc-term-item" data-id="${w.id}" style="${w.mastered ? 'opacity:0.55;' : ''}">
+        <div class="sc-term-body" style="flex:1;">
+          <div class="sc-term-en">${w.title}</div>
+          <div class="sc-term-meta">
+            ${w.source ? `<span class="chip blue">${w.source}</span>` : ''}
+            ${w.category ? `<span class="chip gray">${w.category}</span>` : ''}
+            ${w.mastered ? '<span class="chip green">✓ 已掌握</span>' : ''}
+            ${w.reviewCount > 0 ? `<span class="chip yellow">复习 ${w.reviewCount} 次</span>` : ''}
+          </div>
+          <div class="sc-term-cn">${(w.summary || '').substring(0, 80)}${(w.summary || '').length > 80 ? '...' : ''}</div>
+        </div>
+        <button class="icon-btn vb-del" data-id="${w.id}" style="width:32px;height:32px;font-size:14px;flex-shrink:0;">✕</button>
+      </div>
+    `).join('');
+
+    // 点击查看详情
+    el.querySelectorAll('.sc-term-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        if (e.target.closest('.vb-del')) return;
+        const id = item.dataset.id;
+        const w = words.find(x => x.id === id);
+        if (w) this.showTermDetail(w);
+      });
+    });
+    // 删除
+    el.querySelectorAll('.vb-del').forEach(btn => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        if (await UI.confirm('确定从生词本移除这个术语？')) {
+          await db.remove(db.STORES.vocabBook, id);
+          const words2 = await db.all(db.STORES.vocabBook);
+          words2.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          this._renderVocabList(words2);
+          // 更新卡片头部统计
+          const mastered = words2.filter(w => w.mastered).length;
+          const chips = document.querySelectorAll('#vbBack + .card .chip');
+          if (chips[0]) chips[0].textContent = `共 ${words2.length} 个术语`;
+          if (chips[1]) chips[1].textContent = `已掌握 ${mastered}`;
+          // 更新闪卡/导出按钮绑定
+          document.getElementById('vbFlashcard').onclick = () => this.startFlashcards(words2);
+          document.getElementById('vbExportPdf').onclick = () => this.exportVocabPdf(words2);
+          UI.toast('已移除');
+        }
+      };
+    });
+  },
+
+  /* 闪卡模式 */
+  startFlashcards(words) {
+    if (words.length === 0) { UI.toast('生词本是空的'); return; }
+    // 只显示未掌握的优先，若全掌握了则全部显示
+    const pool = words.filter(w => !w.mastered);
+    const deck = pool.length > 0 ? pool : words;
+    // 打乱顺序
+    const shuffled = [...deck].sort(() => Math.random() - 0.5);
+
+    let idx = 0;
+    let flipped = false;
+
+    const body = `
+      <div style="text-align:center;margin-bottom:12px;">
+        <span style="font-size:12px;color:var(--ink-mute);">第 <span id="fcIdx">1</span> / ${shuffled.length} 张</span>
+      </div>
+      <div class="fc-card" id="fcCard" style="cursor:pointer;">
+        <div class="fc-face fc-front" id="fcFront">
+          <div class="fc-en" id="fcEn">${shuffled[0].title}</div>
+          <div class="fc-hint">点击翻面查看释义</div>
+        </div>
+        <div class="fc-face fc-back" id="fcBack" style="display:none;">
+          <div class="fc-en" style="font-size:18px;">${shuffled[0].title}</div>
+          <div class="fc-cn" id="fcCn">${shuffled[0].summary || ''}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="btn btn-ghost" id="fcPrev" style="flex:1;">‹ 上一个</button>
+        <button class="btn btn-primary" id="fcKnow" style="flex:1;">✓ 认识</button>
+        <button class="btn btn-jade" id="fcNext" style="flex:1;">下一个 ›</button>
+      </div>
+    `;
+    UI.showSheet('闪卡复习', body, (root) => {
+      const card = root.querySelector('#fcCard');
+      const front = root.querySelector('#fcFront');
+      const back = root.querySelector('#fcBack');
+      const idxEl = root.querySelector('#fcIdx');
+      const enEl = root.querySelector('#fcEn');
+      const cnEl = root.querySelector('#fcCn');
+
+      function showCard(i) {
+        flipped = false;
+        front.style.display = '';
+        back.style.display = 'none';
+        enEl.textContent = shuffled[i].title;
+        const backEn = back.querySelector('.fc-en');
+        if (backEn) backEn.textContent = shuffled[i].title;
+        cnEl.textContent = shuffled[i].summary || '';
+        idxEl.textContent = i + 1;
+      }
+
+      card.onclick = () => {
+        flipped = !flipped;
+        front.style.display = flipped ? 'none' : '';
+        back.style.display = flipped ? '' : 'none';
+      };
+
+      root.querySelector('#fcPrev').onclick = (e) => {
+        e.stopPropagation();
+        idx = (idx - 1 + shuffled.length) % shuffled.length;
+        showCard(idx);
+      };
+      root.querySelector('#fcNext').onclick = (e) => {
+        e.stopPropagation();
+        idx = (idx + 1) % shuffled.length;
+        showCard(idx);
+      };
+      root.querySelector('#fcKnow').onclick = async (e) => {
+        e.stopPropagation();
+        const w = shuffled[idx];
+        w.reviewCount = (w.reviewCount || 0) + 1;
+        if (w.reviewCount >= 3) w.mastered = true;
+        await db.put(db.STORES.vocabBook, w);
+        UI.toast(w.mastered ? '🎉 已掌握！' : `复习 ${w.reviewCount} 次`);
+        idx = (idx + 1) % shuffled.length;
+        if (idx < shuffled.length) showCard(idx);
+      };
+    });
+  },
+
+  /* 导出 PDF（利用浏览器打印功能） */
+  async exportVocabPdf(words) {
+    if (words.length === 0) { UI.toast('生词本是空的'); return; }
+    UI.toast('正在生成 PDF...');
+
+    const sorted = [...words].sort((a, b) => (a.category || '').localeCompare(b.category || ''));
+    const byCat = {};
+    sorted.forEach(w => {
+      const cat = w.category || '其他';
+      if (!byCat[cat]) byCat[cat] = [];
+      byCat[cat].push(w);
+    });
+
+    let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>LEC 生词本</title>
+      <style>
+        body{font-family:'Noto Serif SC',serif;padding:40px;color:#2b2622;background:#faf5ec;}
+        h1{font-family:'DM Serif Display',serif;text-align:center;font-size:28px;margin-bottom:4px;}
+        .sub{text-align:center;color:#8a7e6f;font-size:12px;margin-bottom:30px;}
+        h2{font-size:16px;border-bottom:2px solid #2f4a28;padding-bottom:4px;margin-top:24px;color:#2f4a28;}
+        table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
+        th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #d8cfbf;vertical-align:top;}
+        th{background:#e8dfd0;color:#2f4a28;font-weight:600;}
+        .term{font-weight:600;font-size:13px;}
+        .pos{color:#8a7e6f;font-size:11px;}
+        .def{color:#5a5048;line-height:1.5;}
+        .footer{text-align:center;color:#b0a598;font-size:10px;margin-top:30px;}
+      </style></head><body>
+      <h1>LEC Legal English Vocabulary</h1>
+      <div class="sub">法律英语术语手册 · 共 ${words.length} 个术语</div>`;
+
+    for (const cat in byCat) {
+      html += `<h2>${cat}</h2><table><tr><th style="width:30%;">术语</th><th>释义</th></tr>`;
+      byCat[cat].forEach(w => {
+        html += `<tr>
+          <td><div class="term">${w.title}</div><div class="pos">${w.source || ''}</div></td>
+          <td class="def">${w.summary || ''}</td>
+        </tr>`;
+      });
+      html += `</table>`;
+    }
+    html += `<div class="footer">Generated by 今日有雨 · ${UI.todayStr()}</div></body></html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) { UI.toast('请允许弹出窗口'); return; }
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => {
+      w.print();
+    }, 500);
+  },
+
   async fetchNews() {
     UI.toast('正在生成今日 LEC 术语...');
     try {
@@ -3324,17 +3549,35 @@ const StudyCenter = {
         await db.remove(db.STORES.news, old.id);
       }
 
-      // 存入新数据
+      // 存入新数据，并写入生词本（按术语名去重）
+      let newWords = 0;
+      const existing = await db.all(db.STORES.vocabBook);
+      const existingTitles = new Set(existing.map(e => e.title.toLowerCase()));
       for (const item of items.slice(0, 10)) {
-        await db.add(db.STORES.news, {
+        const newsItem = await db.add(db.STORES.news, {
           title: item.title || '',
           summary: item.summary || '',
           source: item.source || '',
           category: item.category || '',
           date: today
         });
+        // 生词本去重：同一个英文术语只存一次
+        const titleLower = (item.title || '').toLowerCase();
+        if (!existingTitles.has(titleLower)) {
+          await db.add(db.STORES.vocabBook, {
+            title: item.title || '',
+            summary: item.summary || '',
+            source: item.source || '',
+            category: item.category || '',
+            firstDate: today,
+            reviewCount: 0,
+            mastered: false
+          });
+          existingTitles.add(titleLower);
+          newWords++;
+        }
       }
-      UI.toast(`已生成 ${items.length} 个 LEC 术语`);
+      UI.toast(`已生成 ${items.length} 个术语${newWords > 0 ? `，新增 ${newWords} 个生词` : ''}`);
       this.renderNews();
     } catch (e) {
       console.error('生成术语失败', e);
