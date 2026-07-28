@@ -1,5 +1,5 @@
-// 今日有雨 Service Worker v2 - 健壮版
-const CACHE_NAME = 'desk-v28';
+// 今日有雨 Service Worker v3 - 健壮版 + Share Target
+const CACHE_NAME = 'desk-v30';
 
 // 核心资源列表
 const CORE_ASSETS = [
@@ -25,10 +25,12 @@ const CORE_ASSETS = [
   './modules/work.js',
   './modules/museum.js',
   './modules/pet.js',
+  './modules/knowledge.js',
   './modules/settings.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  './icons/apple-touch-icon.png'
+  './icons/apple-touch-icon.png',
+  './share-target.html'
 ];
 
 // 逐个缓存，避免一个失败导致全部不缓存
@@ -90,6 +92,13 @@ function normalizeUrl(url) {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
+
+  // ====== Share Target：处理 POST 分享请求 ======
+  if (req.method === 'POST' && new URL(req.url).pathname.endsWith('/share-target.html')) {
+    event.respondWith(handleShare(req));
+    return;
+  }
+
   if (req.method !== 'GET') return;
 
   const isNavigation = req.mode === 'navigate';
@@ -142,3 +151,21 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+
+// ====== Share Target 处理函数 ======
+async function handleShare(req) {
+  const formData = await req.formData();
+  const title = formData.get('title') || '';
+  const text = formData.get('text') || '';
+  const url = formData.get('url') || '';
+
+  // 把分享数据存入 sessionStorage（通过 redirect GET 传递）
+  // 由于 SW 无法直接写 sessionStorage，用 URL 参数传递
+  const params = new URLSearchParams();
+  if (title) params.set('title', title);
+  if (text) params.set('text', text);
+  if (url) params.set('url', url);
+
+  // 302 重定向到 GET share-target.html?title=...&text=...&url=...
+  return Response.redirect(`./share-target.html?${params.toString()}`, 303);
+}

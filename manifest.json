@@ -2,8 +2,8 @@
   "name": "今日有雨",
   "short_name": "今日有雨",
   "description": "一个集学习、打卡、旅游、下厨、记账、工作、博物馆于一体的个人工作台",
-  "id": "/desk/?app=v28",
-  "start_url": "./index.html?v=28",
+  "id": "/desk/?app=v30",
+  "start_url": "./index.html?v=30",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f7f8f5",
@@ -41,5 +41,15 @@
       "type": "image/png",
       "purpose": "any"
     }
-  ]
+  ],
+  "share_target": {
+    "action": "./share-target.html",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
 }

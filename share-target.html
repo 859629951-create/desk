@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#2f4a28" />
+  <title>导入到知识库</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Noto Serif SC', 'PingFang SC', serif;
+      background: #faf5ec;
+      color: #2b2622;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 32px 24px;
+      max-width: 360px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(43,38,34,0.08);
+    }
+    .icon { font-size: 48px; margin-bottom: 16px; }
+    .title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+    .sub { font-size: 13px; color: #8a7e6f; margin-bottom: 20px; line-height: 1.6; }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid #e8dfd0;
+      border-top-color: #2f4a28;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .result { font-size: 13px; color: #5a5048; line-height: 1.6; }
+    .result .ok { color: #2f4a28; font-weight: 600; }
+    .result .err { color: #c44; }
+    .preview {
+      text-align: left;
+      background: #f7f3eb;
+      border-radius: 10px;
+      padding: 12px;
+      margin: 12px 0;
+      font-size: 12px;
+      color: #5a5048;
+      line-height: 1.5;
+    }
+    .preview .label { color: #8a7e6f; font-size: 11px; margin-bottom: 2px; }
+    .btn {
+      display: inline-block;
+      margin-top: 16px;
+      padding: 10px 24px;
+      background: #2f4a28;
+      color: #faf5ec;
+      border: none;
+      border-radius: 10px;
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon" id="icon">📥</div>
+    <div class="title" id="title">正在导入...</div>
+    <div class="sub" id="sub">提取内容并智能分类中</div>
+    <div id="spinner" class="spinner"></div>
+    <div id="result" class="result"></div>
+    <div id="preview"></div>
+    <a id="openBtn" class="btn" href="./index.html#knowledge" style="display:none;">查看知识库</a>
+  </div>
+
+  <script>
+    // ====== 等待 db.js 和 ai.js 加载 ======
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+
+    async function init() {
+      await loadScript('./scripts/db.js?v=30');
+      await loadScript('./scripts/ai.js?v=30');
+
+      // ====== 读取分享数据 ======
+      // Share Target API 通过 POST FormData 传递数据
+      let shareData = { title: '', text: '', url: '' };
+
+      try {
+        const formData = await new Promise((resolve) => {
+          const req = new Request('./share-target.html', { method: 'POST' });
+          // 尝试从 navigation 事件读取
+          if (window.navigator.serviceWorker && navigator.serviceWorker.controller) {
+            // PWA 环境下由 SW 处理重定向到这里，数据在 URL hash 或 sessionStorage
+          }
+          resolve(null);
+        });
+      } catch(e) {}
+
+      // 方式1：从 URL 参数读取（SW 重定向时附带）
+      const params = new URLSearchParams(window.location.search);
+      shareData.title = params.get('title') || '';
+      shareData.text = params.get('text') || '';
+      shareData.url = params.get('url') || '';
+
+      // 方式2：从 sessionStorage 读取（SW 存入）
+      if (!shareData.title && !shareData.text && !shareData.url) {
+        try {
+          const stored = sessionStorage.getItem('shareData');
+          if (stored) {
+            shareData = JSON.parse(stored);
+            sessionStorage.removeItem('shareData');
+          }
+        } catch(e) {}
+      }
+
+      // 方式3：监听 message（SW postMessage）
+      if (!shareData.title && !shareData.text && !shareData.url) {
+        shareData = await new Promise((resolve) => {
+          const timer = setTimeout(() => resolve({ title: '', text: '', url: '' }), 3000);
+          navigator.serviceWorker.addEventListener('message', (e) => {
+            clearTimeout(timer);
+            if (e.data && e.data.type === 'share-data') {
+              resolve(e.data.payload || { title: '', text: '', url: '' });
+            }
+          });
+        });
+      }
+
+      if (!shareData.title && !shareData.text && !shareData.url) {
+        showResult(false, '未收到分享内容', '请从小红书或其他 App 内使用「分享」功能');
+        return;
+      }
+
+      // 合并原始内容
+      const rawContent = [shareData.title, shareData.text, shareData.url].filter(Boolean).join('\n');
+
+      // 显示预览
+      document.getElementById('preview').innerHTML = `
+        <div class="preview">
+          <div class="label">原始内容</div>
+          ${escapeHtml(rawContent.substring(0, 200))}${rawContent.length > 200 ? '...' : ''}
+        </div>
+      `;
+
+      // ====== AI 提取+分类 ======
+      try {
+        const prompt = `以下是从社交媒体分享的内容（可能来自小红书、微博、微信公众号等）。请提取关键信息并智能分类。
+
+内容：
+${rawContent}
+
+请返回 JSON 格式（只返回 JSON，不要其他文字）：
+{
+  "title": "提取一个简洁的标题（不超过30字）",
+  "summary": "提取核心内容摘要（50-100字，包括关键观点/步骤/推荐等）",
+  "category": "从以下分类中选择最合适的一个：美食、旅行、学习、生活、穿搭、美妆、健身、读书、育儿、职场、科技、法律、其他",
+  "tags": ["标签1", "标签2"],
+  "source": "判断来源平台（小红书/微博/微信/知乎/网页等）"
+}`;
+
+        const resp = await AI._callOnline(prompt, '');
+        const cleaned = AI._stripCodeFence(resp);
+        const match = cleaned.match(/\{[\s\S]*\}/);
+        let info = {};
+        if (match) {
+          try { info = JSON.parse(match[0]); } catch(e) { info = {}; }
+        }
+
+        // 兜底
+        info.title = info.title || shareData.title || shareData.url || '未命名内容';
+        info.summary = info.summary || shareData.text || '';
+        info.category = info.category || '其他';
+        info.tags = info.tags || [];
+        info.source = info.source || detectSource(shareData.url);
+
+        // ====== 存入数据库 ======
+        const item = await db.add(db.STORES.knowledge, {
+          title: info.title,
+          summary: info.summary,
+          category: info.category,
+          tags: info.tags,
+          source: info.source,
+          url: shareData.url || '',
+          rawContent: rawContent,
+          read: false
+        });
+
+        showResult(true, `"${info.title}" 已导入`, `分类：${info.category} · 来源：${info.source}`);
+      } catch (e) {
+        // AI 失败时也要保存原始内容
+        const item = await db.add(db.STORES.knowledge, {
+          title: shareData.title || shareData.url || '未命名内容',
+          summary: shareData.text || '',
+          category: '其他',
+          tags: [],
+          source: detectSource(shareData.url),
+          url: shareData.url || '',
+          rawContent: rawContent,
+          read: false
+        });
+
+        showResult(true, '已导入（未分类）', 'AI 暂时不可用，稍后可在知识库中编辑分类');
+      }
+    }
+
+    function showResult(ok, title, sub) {
+      document.getElementById('icon').textContent = ok ? '✅' : '❌';
+      document.getElementById('title').textContent = title;
+      document.getElementById('sub').textContent = sub;
+      document.getElementById('spinner').style.display = 'none';
+      if (ok) {
+        document.getElementById('openBtn').style.display = 'inline-block';
+      }
+    }
+
+    function detectSource(url) {
+      if (!url) return '未知';
+      if (url.includes('xiaohongshu') || url.includes('xhslink')) return '小红书';
+      if (url.includes('weibo')) return '微博';
+      if (url.includes('mp.weixin')) return '微信公众号';
+      if (url.includes('zhihu')) return '知乎';
+      if (url.includes('bilibili') || url.includes('b23.tv')) return '哔哩哔哩';
+      return '网页';
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    init();
+  </script>
+</body>
+</html>

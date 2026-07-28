@@ -4,7 +4,7 @@
    ============================================ */
 
 const DB_NAME = 'deskDB';
-const DB_VERSION = 10;
+const DB_VERSION = 11;
 
 const STORES = {
   study: 'study', // 学习清单
@@ -53,6 +53,8 @@ const STORES = {
   profTask: 'profTask',         // 专业学习任务（自由文本+频次+优先级+打卡）
   // ===== v10 新增 =====
   vocabBook: 'vocabBook',       // LEC 生词本
+  // ===== v11 新增 =====
+  knowledge: 'knowledge',       // 知识库（小红书等分享内容）
 };
 
 let _db = null;
