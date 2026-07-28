@@ -334,8 +334,8 @@ router.register('home', () => {
       };
     }
 
-    // Hero 统计
-    const studyTodo = langTasks.filter((t) => !t.done).length;
+    // Hero 统计 —— 待学 = 语言+专业未完成任务总数
+    const studyTodo = langTasks.filter((t) => !t.done).length + profTasks.filter((t) => !t.done).length;
     const workTodo = works.filter((w) => (w.progress || 0) < 100).length;
     const buyTodo = ings.filter((i) => !i.have).length;
     document.getElementById('heroStats').innerHTML = `
@@ -346,12 +346,13 @@ router.register('home', () => {
       <div class="dh-stat"><span class="num">${buyTodo}</span><span class="label">购物</span></div>
     `;
 
-    // 学习卡片 - 大卡（基于语言任务）
-    const studyDone = langTasks.filter((t) => t.done).length;
-    const todayCheckin = langTasks.filter((t) => (t.checkins || []).some((c) => c.date === UI.todayStr())).length;
-    // 计算总连续天数
+    // 学习卡片 - 大卡（语言+专业任务合并统计）
+    const allTasks = [...langTasks, ...profTasks];
+    const studyDone = allTasks.filter((t) => t.done).length;
+    const todayCheckin = allTasks.filter((t) => (t.checkins || []).some((c) => c.date === UI.todayStr())).length;
+    // 计算总连续天数（合并两种任务的打卡日期）
     const allCheckinDates = new Set();
-    langTasks.forEach((t) => (t.checkins || []).forEach((c) => allCheckinDates.add(c.date)));
+    allTasks.forEach((t) => (t.checkins || []).forEach((c) => allCheckinDates.add(c.date)));
     let streak = 0;
     let checkDate = new Date();
     while (allCheckinDates.has(UI.formatDate(checkDate.getTime()))) {
@@ -359,7 +360,7 @@ router.register('home', () => {
       checkDate.setDate(checkDate.getDate() - 1);
     }
     document.getElementById('dcStudy').innerHTML = `
-      <div class="dc-lg-num">${studyDone}<span class="dc-lg-unit">/${langTasks.length}</span></div>
+      <div class="dc-lg-num">${studyDone}<span class="dc-lg-unit">/${allTasks.length}</span></div>
       <div class="dc-lg-sub">已完成任务</div>
       <div class="dc-lg-tags">
         <span class="dc-lg-tag">🔥 连续 ${streak} 天</span>
