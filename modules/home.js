@@ -34,9 +34,6 @@ router.register('home', () => {
           <div class="dh-stat-vline"></div>
           <div class="dh-stat"><span class="num">·</span><span class="label">购物</span></div>
         </div>
-        <div class="dh-quote" id="dailyQuoteBar">
-          <span class="dh-quote-text" id="quoteText">加载中...</span>
-        </div>
       </div>
 
       <!-- 今日待办速览 -->
@@ -126,11 +123,10 @@ router.register('home', () => {
         </div>
       </div>
 
-      <!-- 每日一言 -->
-      <div class="dash-quote" id="dailyQuote">
-        <span class="dq-mark">「</span>
-        <span class="dq-text">日拱一卒，功不唐捐</span>
-        <span class="dq-mark">」</span>
+      <!-- 每日一言（点击刷新） -->
+      <div class="dh-quote" id="dailyQuoteBar">
+        <span class="dh-quote-text" id="quoteText">点击获取金句</span>
+        <button class="dh-quote-refresh" id="quoteRefreshBtn" title="换一句">🔄</button>
       </div>
     </div>
   `;
@@ -140,8 +136,8 @@ router.register('home', () => {
     c.addEventListener('click', () => router.navigate(c.dataset.route));
   });
 
-  // 每日一言（按日期轮换 + AI 生成）
-  const quotes = [
+  // 每日金句 - 点击刷新模式
+  const fallbackQuotes = [
     '日拱一卒，功不唐捐',
     '不积跬步，无以至千里',
     '腹有诗书气自华',
@@ -153,33 +149,63 @@ router.register('home', () => {
     '路漫漫其修远兮，吾将上下而求索',
     '天行健，君子以自强不息'
   ];
-  const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
-  const dqEl = document.querySelector('#dailyQuote .dq-text');
-  if (dqEl) {
-    // 先用本地金句显示
-    dqEl.textContent = quotes[dayOfYear % quotes.length];
-    // 异步尝试 AI 生成今日金句（每天只生成一次）
-    (async () => {
-      const today = UI.todayStr();
-      try {
-        const cached = await db.query(db.STORES.dailyQuote, q => q.date === today);
-        if (cached.length > 0) {
-          dqEl.textContent = cached[0].text;
-          return;
-        }
-        const prompt = '请随机生成一条经典金句（古今诗词、古文名句或中外哲理格言）。要求：1.积极向上 2.不超过30字 3.标注出处。返回JSON：{"text":"金句","source":"出处"}';
-        const resp = await AI._callOnline(prompt, '');
-        const cleaned = (AI._stripCodeFence ? AI._stripCodeFence(resp) : resp).trim();
-        const match = cleaned.match(/\{[\s\S]*\}/);
-        if (match) {
-          const data = JSON.parse(match[0]);
-          dqEl.textContent = data.text;
-          try {
-            await db.add(db.STORES.dailyQuote, { text: data.text, source: data.source || '', date: today });
-          } catch(e) {}
-        }
-      } catch(e) {}
-    })();
+
+  async function fetchQuote() {
+    const quoteEl = document.getElementById('quoteText');
+    const btn = document.getElementById('quoteRefreshBtn');
+    if (!quoteEl) return;
+    quoteEl.textContent = '✨ 获取中...';
+    if (btn) btn.style.opacity = '0.5';
+    try {
+      const prompt = '请随机生成一条经典金句（古今诗词、古文名句或中外哲理格言）。要求：1.积极向上 2.不超过30字 3.标注出处。返回JSON：{"text":"金句","source":"出处"}';
+      const resp = await AI._callOnline(prompt, '');
+      const cleaned = (AI._stripCodeFence ? AI._stripCodeFence(resp) : resp).trim();
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (match) {
+        const data = JSON.parse(match[0]);
+        quoteEl.textContent = data.text;
+        // 存入今日缓存
+        try {
+          const today = UI.todayStr();
+          // 删除今日旧缓存
+          const old = await db.query(db.STORES.dailyQuote, q => q.date === today);
+          for (const o of old) await db.remove(db.STORES.dailyQuote, o.id);
+          await db.add(db.STORES.dailyQuote, { text: data.text, source: data.source || '', date: today });
+        } catch(e) {}
+      } else {
+        const d = new Date();
+        const dayOfYear = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
+        quoteEl.textContent = fallbackQuotes[dayOfYear % fallbackQuotes.length];
+      }
+    } catch(e) {
+      const d = new Date();
+      const dayOfYear = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
+      quoteEl.textContent = fallbackQuotes[dayOfYear % fallbackQuotes.length];
+    }
+    if (btn) btn.style.opacity = '';
+  }
+
+  // 页面加载时：先显示今日缓存的金句，没有就显示提示
+  (async () => {
+    const quoteEl = document.getElementById('quoteText');
+    if (!quoteEl) return;
+    const today = UI.todayStr();
+    try {
+      const cached = await db.query(db.STORES.dailyQuote, q => q.date === today);
+      if (cached.length > 0) {
+        quoteEl.textContent = cached[0].text;
+      }
+    } catch(e) {}
+  })();
+
+  // 绑定刷新按钮
+  const refreshBtn = document.getElementById('quoteRefreshBtn');
+  if (refreshBtn) {
+    refreshBtn.onclick = () => {
+      refreshBtn.style.transform = 'rotate(360deg)';
+      setTimeout(() => { refreshBtn.style.transform = ''; }, 400);
+      fetchQuote();
+    };
   }
 
   // 异步加载各模块数据
@@ -466,45 +492,6 @@ router.register('home', () => {
           <div class="dc-foot">${names.length > 20 ? names.slice(0, 20) + '...' : names}</div>
         `;
       }
-    }
-  })();
-
-  // 每日金句
-  (async () => {
-    const today = UI.todayStr();
-    const quoteEl = document.getElementById('quoteText');
-    if (!quoteEl) return;
-    // 尝试从缓存获取
-    try {
-      const cached = await db.query(db.STORES.dailyQuote, q => q.date === today);
-      if (cached.length > 0) {
-        quoteEl.textContent = cached[0].text;
-        return;
-      }
-    } catch(e) {}
-    // 本地备用金句
-    const fallback = ['日拱一卒，功不唐捐','不积跬步，无以至千里','腹有诗书气自华','业精于勤，荒于嬉','博学之，审问之，慎思之，明辨之，笃行之','路漫漫其修远兮，吾将上下而求索','天行健，君子以自强不息','知之者不如好之者，好之者不如乐之者','学而不思则罔，思而不学则殆','千里之行，始于足下'];
-    const d = new Date();
-    const dayOfYear = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
-    quoteEl.textContent = fallback[dayOfYear % fallback.length];
-    // 尝试 AI 生成
-    quoteEl.textContent = '✨ 获取中...';
-    try {
-      const prompt = '请随机生成一条经典金句（古今诗词、古文名句或中外哲理格言）。要求：1.积极向上 2.不超过30字 3.标注出处。返回JSON：{"text":"金句","source":"出处"}';
-      const resp = await AI._callOnline(prompt, '');
-      const cleaned = (AI._stripCodeFence ? AI._stripCodeFence(resp) : resp).trim();
-      const match = cleaned.match(/\{[\s\S]*\}/);
-      if (match) {
-        const data = JSON.parse(match[0]);
-        quoteEl.textContent = data.text;
-        try {
-          await db.add(db.STORES.dailyQuote, { text: data.text, source: data.source || '', date: today });
-        } catch(e) {}
-      } else {
-        quoteEl.textContent = fallback[dayOfYear % fallback.length];
-      }
-    } catch(e) {
-      quoteEl.textContent = fallback[dayOfYear % fallback.length];
     }
   })();
 
