@@ -140,7 +140,7 @@ router.register('home', () => {
     c.addEventListener('click', () => router.navigate(c.dataset.route));
   });
 
-  // 每日一言（按日期轮换）
+  // 每日一言（按日期轮换 + AI 生成）
   const quotes = [
     '日拱一卒，功不唐捐',
     '不积跬步，无以至千里',
@@ -149,10 +149,38 @@ router.register('home', () => {
     '千里之行，始于足下',
     '学而不思则罔，思而不学则殆',
     '宝剑锋从磨砺出',
-    '书中自有黄金屋'
+    '书中自有黄金屋',
+    '路漫漫其修远兮，吾将上下而求索',
+    '天行健，君子以自强不息'
   ];
   const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
-  document.querySelector('#dailyQuote .dq-text').textContent = quotes[dayOfYear % quotes.length];
+  const dqEl = document.querySelector('#dailyQuote .dq-text');
+  if (dqEl) {
+    // 先用本地金句显示
+    dqEl.textContent = quotes[dayOfYear % quotes.length];
+    // 异步尝试 AI 生成今日金句（每天只生成一次）
+    (async () => {
+      const today = UI.todayStr();
+      try {
+        const cached = await db.query(db.STORES.dailyQuote, q => q.date === today);
+        if (cached.length > 0) {
+          dqEl.textContent = cached[0].text;
+          return;
+        }
+        const prompt = '请随机生成一条经典金句（古今诗词、古文名句或中外哲理格言）。要求：1.积极向上 2.不超过30字 3.标注出处。返回JSON：{"text":"金句","source":"出处"}';
+        const resp = await AI._callOnline(prompt, '');
+        const cleaned = (AI._stripCodeFence ? AI._stripCodeFence(resp) : resp).trim();
+        const match = cleaned.match(/\{[\s\S]*\}/);
+        if (match) {
+          const data = JSON.parse(match[0]);
+          dqEl.textContent = data.text;
+          try {
+            await db.add(db.STORES.dailyQuote, { text: data.text, source: data.source || '', date: today });
+          } catch(e) {}
+        }
+      } catch(e) {}
+    })();
+  }
 
   // 异步加载各模块数据
   (async () => {

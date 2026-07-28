@@ -95,6 +95,7 @@ const Knowledge = {
         </div>
         <div class="kb-item-title">${item.title || '未命名'}</div>
         ${item.summary ? `<div class="kb-item-summary">${item.summary}</div>` : ''}
+        ${item.keyPoints ? `<div class="kb-item-keypoints">${item.keyPoints.split('\n').slice(0, 2).join('\n')}${item.keyPoints.split('\n').length > 2 ? '...' : ''}</div>` : ''}
         ${item.tags && item.tags.length > 0 ? `<div class="kb-item-tags">${item.tags.map(t => `<span class="chip gray" style="font-size:10px;">#${t}</span>`).join('')}</div>` : ''}
         <div class="kb-item-footer">
           <span class="kb-item-date">${UI.relativeDate(item.createdAt)}</span>
@@ -135,7 +136,13 @@ const Knowledge = {
         ${item.read ? '' : '<span class="chip yellow" style="margin-left:4px;">未读</span>'}
       </div>
       <h3 style="font-size:17px;font-weight:600;margin-bottom:10px;line-height:1.4;">${item.title || '未命名'}</h3>
-      ${item.summary ? `<div style="font-size:14px;color:var(--ink-soft);line-height:1.7;margin-bottom:12px;">${item.summary}</div>` : ''}
+      ${item.summary ? `<div style="font-size:13px;color:var(--ink-mute);line-height:1.6;margin-bottom:14px;padding:8px 12px;background:var(--paper-deep);border-radius:8px;">📋 ${item.summary}</div>` : ''}
+      ${item.keyPoints ? `
+        <div style="margin-bottom:14px;">
+          <div style="font-size:12px;font-weight:600;color:var(--forest);margin-bottom:6px;">✨ 核心价值点</div>
+          <div style="font-size:13px;color:var(--ink);line-height:1.8;white-space:pre-wrap;padding:10px 12px;background:rgba(47,74,40,0.05);border-radius:8px;border-left:3px solid var(--forest);">${item.keyPoints}</div>
+        </div>
+      ` : ''}
       ${item.tags && item.tags.length > 0 ? `
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
           ${item.tags.map(t => `<span class="chip gray" style="font-size:11px;">#${t}</span>`).join('')}
@@ -192,7 +199,11 @@ const Knowledge = {
       </div>
       <div class="form-group">
         <label>摘要</label>
-        <textarea id="kbEditSummary" rows="4">${item.summary || ''}</textarea>
+        <textarea id="kbEditSummary" rows="3">${item.summary || ''}</textarea>
+      </div>
+      <div class="form-group">
+        <label>核心价值点</label>
+        <textarea id="kbEditKeyPoints" rows="5" placeholder="每行一个要点，用「• 」开头">${item.keyPoints || ''}</textarea>
       </div>
       <div class="form-group">
         <label>标签（逗号分隔）</label>
@@ -214,6 +225,7 @@ const Knowledge = {
         item.title = root.querySelector('#kbEditTitle').value.trim();
         item.category = root.querySelector('#kbEditCat').value;
         item.summary = root.querySelector('#kbEditSummary').value.trim();
+        item.keyPoints = root.querySelector('#kbEditKeyPoints').value.trim();
         item.tags = root.querySelector('#kbEditTags').value.split(',').map(t => t.trim()).filter(Boolean);
         item.url = root.querySelector('#kbEditUrl').value.trim();
         await db.put(db.STORES.knowledge, item);
@@ -255,19 +267,26 @@ const Knowledge = {
     const url = urlMatch ? urlMatch[0] : '';
 
     try {
-      const prompt = `以下内容来自用户手动输入（可能是链接或文本）。请提取关键信息并智能分类。
+      const prompt = `你是一个内容分析助手。以下内容来自用户手动输入（可能是链接或文本）。请深度分析并提取结构化信息。
 
 内容：
 ${input}
 
-请返回 JSON 格式（只返回 JSON）：
+请仔细分析内容，返回 JSON 格式（只返回 JSON，不要其他文字）：
 {
   "title": "简洁标题（不超过30字）",
-  "summary": "核心内容摘要（50-100字）",
+  "summary": "内容概述：这篇内容主要在讲什么（50-80字）",
+  "keyPoints": "核心价值点：提取3-5个最有价值的信息点，每个用「• 」开头换行排列。例如：如果是美食攻略，列出具体推荐的店铺和菜品；如果是旅行路线，列出具体路线和打卡点；如果是教程，列出关键步骤",
   "category": "从以下选一：美食、旅行、学习、生活、穿搭、美妆、健身、读书、育儿、职场、科技、法律、其他",
-  "tags": ["标签1", "标签2"],
+  "tags": ["标签1", "标签2", "标签3"],
   "source": "来源平台"
-}`;
+}
+
+注意：
+- keyPoints 是最重要的字段，要提取具体、可操作的信息，不要泛泛而谈
+- 如果是美食攻略，keyPoints 应包含具体店铺名、地址、推荐菜品
+- 如果是旅行路线，keyPoints 应包含具体路线、地点、交通方式
+- 如果是教程/干货，keyPoints 应包含关键步骤、要点、注意事项`;
 
       const resp = await AI._callOnline(prompt, '');
       const cleaned = AI._stripCodeFence(resp);
@@ -279,6 +298,7 @@ ${input}
 
       info.title = info.title || input.substring(0, 30);
       info.summary = info.summary || input;
+      info.keyPoints = info.keyPoints || '';
       info.category = info.category || '其他';
       info.tags = info.tags || [];
       info.source = info.source || (url ? this._detectSource(url) : '手动');
@@ -286,6 +306,7 @@ ${input}
       await db.add(db.STORES.knowledge, {
         title: info.title,
         summary: info.summary,
+        keyPoints: info.keyPoints,
         category: info.category,
         tags: info.tags,
         source: info.source,
