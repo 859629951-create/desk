@@ -2,7 +2,8 @@
   "name": "今日有雨",
   "short_name": "今日有雨",
   "description": "一个集学习、打卡、旅游、下厨、记账、工作、博物馆于一体的个人工作台",
-  "start_url": "./index.html",
+  "id": "/desk/?app=v28",
+  "start_url": "./index.html?v=28",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f7f8f5",
@@ -23,7 +24,13 @@
       "purpose": "any"
     },
     {
-      "src": "icons/icon-maskable-512.png",
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

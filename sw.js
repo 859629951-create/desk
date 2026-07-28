@@ -1,21 +1,18 @@
-// 今日有雨 Service Worker
-const CACHE_NAME = 'desk-v27';
+// 今日有雨 Service Worker v2 - 健壮版
+const CACHE_NAME = 'desk-v28';
 
-// 核心资源（安装时预缓存）
+// 核心资源列表
 const CORE_ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  // styles
   './styles/base.css',
   './styles/app.css',
-  // scripts
   './scripts/db.js',
   './scripts/ai.js',
   './scripts/app.js',
   './scripts/router.js',
   './scripts/notify.js',
-  // modules
   './modules/home.js',
   './modules/more.js',
   './modules/study.js',
@@ -29,15 +26,59 @@ const CORE_ASSETS = [
   './modules/museum.js',
   './modules/pet.js',
   './modules/settings.js',
-  // icons
   './icons/icon-192.png',
   './icons/icon-512.png',
-  './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png'
 ];
 
-// 去除 URL query string，用于缓存匹配
-function stripQuery(url) {
+// 逐个缓存，避免一个失败导致全部不缓存
+async function cacheIndividually(cache, urls) {
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { cache: 'no-cache' });
+      if (res.ok) {
+        await cache.put(new Request(url), res);
+      }
+    } catch (e) {
+      // 单个失败不影响其他
+    }
+  }
+}
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      // 1. 先缓存 index.html（最高优先级）
+      try {
+        const indexRes = await fetch('./index.html', { cache: 'no-cache' });
+        if (indexRes.ok) {
+          await cache.put(new Request('./index.html'), indexRes);
+          await cache.put(new Request('./'), indexRes.clone());
+        }
+      } catch (e) {}
+      // 2. 逐个缓存其他资源
+      await cacheIndividually(cache, CORE_ASSETS.filter(u => u !== './' && u !== './index.html'));
+      // 3. 立即激活
+      self.skipWaiting();
+    })()
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    (async () => {
+      // 删除旧缓存
+      const keys = await caches.keys();
+      await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
+      // 立即接管所有客户端
+      await self.clients.claim();
+    })()
+  );
+});
+
+// 去除 URL query string
+function normalizeUrl(url) {
   try {
     const u = new URL(url);
     u.search = '';
@@ -47,60 +88,57 @@ function stripQuery(url) {
   }
 }
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      // 安装时把带版本号的 URL 也缓存一份（与 index.html 实际请求一致）
-      const withVersion = CORE_ASSETS.map((url) => {
-        if (url.startsWith('./') && url !== './' && url !== './index.html' && url !== './manifest.json') {
-          return [`${url}?v=27`, url];
-        }
-        return [url];
-      }).flat();
-      return cache.addAll(withVersion).catch(() => {});
-    })
-  );
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
-
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
 
-  const url = stripQuery(req.url);
+  const isNavigation = req.mode === 'navigate';
+  const cleanUrl = normalizeUrl(req.url);
 
-  // 网络优先，失败回退缓存（带 query string 兼容）
-  event.respondWith(
-    fetch(req)
-      .then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          // 存储时去掉 query string，统一用干净的 URL
-          cache.put(new Request(url), copy);
-        }).catch(() => {});
-        return res;
-      })
-      .catch(() => {
-        // 离线：先精确匹配，再用无 query 的 URL 匹配
-        return caches.match(req).then((cached) => {
-          if (cached) return cached;
-          return caches.match(new Request(url));
-        }).then((cached) => {
-          // HTML 导航请求 fallback 到 index.html
-          if (!cached && req.mode === 'navigate') {
-            return caches.match('./index.html');
+  if (isNavigation) {
+    // HTML 导航请求：cache-first（离线优先，确保 PWA 能打开）
+    event.respondWith(
+      (async () => {
+        // 先查缓存
+        const cached = await caches.match(req) || await caches.match(new Request(cleanUrl)) || await caches.match('./index.html');
+        if (cached) {
+          // 后台更新缓存
+          fetch(req).then(res => {
+            if (res.ok) {
+              caches.open(CACHE_NAME).then(c => c.put(new Request('./index.html'), res));
+            }
+          }).catch(() => {});
+          return cached;
+        }
+        // 缓存没有，尝试网络
+        try {
+          const res = await fetch(req);
+          if (res.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(new Request('./index.html'), res.clone());
+            await cache.put(new Request('./'), res.clone());
           }
-          return cached || caches.match('./index.html');
-        });
-      })
-  );
+          return res;
+        } catch (e) {
+          // 最终 fallback
+          return caches.match('./index.html');
+        }
+      })()
+    );
+  } else {
+    // 静态资源：stale-while-revalidate
+    event.respondWith(
+      (async () => {
+        const cached = await caches.match(req) || await caches.match(new Request(cleanUrl));
+        const fetchPromise = fetch(req).then(res => {
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then(c => c.put(new Request(cleanUrl), clone));
+          }
+          return res;
+        }).catch(() => cached);
+        return cached || fetchPromise;
+      })()
+    );
+  }
 });
