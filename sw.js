@@ -1,5 +1,5 @@
-// 今日有雨 Service Worker v3 - 健壮版 + Share Target
-const CACHE_NAME = 'desk-v30';
+// 今日有雨 Service Worker v4 - 健壮版 + Share Target + 强制更新
+const CACHE_NAME = 'desk-v31';
 
 // 核心资源列表
 const CORE_ASSETS = [
@@ -70,11 +70,16 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      // 删除旧缓存
+      // 删除所有旧缓存（不管名字是什么）
       const keys = await caches.keys();
       await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
       // 立即接管所有客户端
       await self.clients.claim();
+      // 通知所有客户端强制刷新
+      const clients = await self.clients.matchAll({ type: 'window' });
+      clients.forEach(client => {
+        client.navigate(client.url);
+      });
     })()
   );
 });
@@ -105,21 +110,9 @@ self.addEventListener('fetch', (event) => {
   const cleanUrl = normalizeUrl(req.url);
 
   if (isNavigation) {
-    // HTML 导航请求：cache-first（离线优先，确保 PWA 能打开）
+    // HTML 导航请求：网络优先（确保拿到最新 HTML），离线才用缓存
     event.respondWith(
       (async () => {
-        // 先查缓存
-        const cached = await caches.match(req) || await caches.match(new Request(cleanUrl)) || await caches.match('./index.html');
-        if (cached) {
-          // 后台更新缓存
-          fetch(req).then(res => {
-            if (res.ok) {
-              caches.open(CACHE_NAME).then(c => c.put(new Request('./index.html'), res));
-            }
-          }).catch(() => {});
-          return cached;
-        }
-        // 缓存没有，尝试网络
         try {
           const res = await fetch(req);
           if (res.ok) {
@@ -129,24 +122,27 @@ self.addEventListener('fetch', (event) => {
           }
           return res;
         } catch (e) {
-          // 最终 fallback
-          return caches.match('./index.html');
+          // 离线：用缓存
+          const cached = await caches.match(req) || await caches.match(new Request(cleanUrl)) || await caches.match('./index.html');
+          return cached || new Response('离线模式，请连接网络后重试', { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
         }
       })()
     );
   } else {
-    // 静态资源：stale-while-revalidate
+    // 静态资源：网络优先，失败回退缓存
     event.respondWith(
       (async () => {
-        const cached = await caches.match(req) || await caches.match(new Request(cleanUrl));
-        const fetchPromise = fetch(req).then(res => {
+        try {
+          const res = await fetch(req);
           if (res.ok) {
             const clone = res.clone();
             caches.open(CACHE_NAME).then(c => c.put(new Request(cleanUrl), clone));
           }
           return res;
-        }).catch(() => cached);
-        return cached || fetchPromise;
+        } catch (e) {
+          const cached = await caches.match(req) || await caches.match(new Request(cleanUrl));
+          return cached || new Response('', { status: 504 });
+        }
       })()
     );
   }
