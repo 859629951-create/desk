@@ -3542,41 +3542,49 @@ const StudyCenter = {
       }
       const items = JSON.parse(match[0]);
 
-      // 清除今日旧数据
+      // 清除今日旧 news 数据（不影响生词本）
       const today = UI.todayStr();
       const oldNews = await db.all(db.STORES.news);
       for (const old of oldNews.filter(n => n.date === today)) {
         await db.remove(db.STORES.news, old.id);
       }
 
-      // 存入新数据，并写入生词本（按术语名去重）
-      let newWords = 0;
-      const existing = await db.all(db.STORES.vocabBook);
-      const existingTitles = new Set(existing.map(e => e.title.toLowerCase()));
+      // 存入新 news 数据
       for (const item of items.slice(0, 10)) {
-        const newsItem = await db.add(db.STORES.news, {
+        await db.add(db.STORES.news, {
           title: item.title || '',
           summary: item.summary || '',
           source: item.source || '',
           category: item.category || '',
           date: today
         });
-        // 生词本去重：同一个英文术语只存一次
-        const titleLower = (item.title || '').toLowerCase();
-        if (!existingTitles.has(titleLower)) {
-          await db.add(db.STORES.vocabBook, {
-            title: item.title || '',
-            summary: item.summary || '',
-            source: item.source || '',
-            category: item.category || '',
-            firstDate: today,
-            reviewCount: 0,
-            mastered: false
-          });
-          existingTitles.add(titleLower);
-          newWords++;
-        }
       }
+
+      // 写入生词本（累加模式：之前的术语全部保留，新术语按名称去重后追加）
+      let newWords = 0;
+      try {
+        const existing = await db.all(db.STORES.vocabBook);
+        const existingTitles = new Set(existing.map(e => (e.title || '').toLowerCase()));
+        for (const item of items.slice(0, 10)) {
+          const titleLower = (item.title || '').toLowerCase();
+          if (titleLower && !existingTitles.has(titleLower)) {
+            await db.add(db.STORES.vocabBook, {
+              title: item.title || '',
+              summary: item.summary || '',
+              source: item.source || '',
+              category: item.category || '',
+              firstDate: today,
+              reviewCount: 0,
+              mastered: false
+            });
+            existingTitles.add(titleLower);
+            newWords++;
+          }
+        }
+      } catch (vocabErr) {
+        console.error('生词本写入失败（不影响术语显示）', vocabErr);
+      }
+
       UI.toast(`已生成 ${items.length} 个术语${newWords > 0 ? `，新增 ${newWords} 个生词` : ''}`);
       this.renderNews();
     } catch (e) {

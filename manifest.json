@@ -3,7 +3,7 @@
   "short_name": "今日有雨",
   "description": "一个集学习、打卡、旅游、下厨、记账、工作、博物馆于一体的个人工作台",
   "id": "/desk/?app=v30",
-  "start_url": "./index.html?v=33",
+  "start_url": "./index.html?v=34",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f7f8f5",
