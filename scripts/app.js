@@ -41,7 +41,8 @@ const App = {
     pet: { title: '宠物记录', sub: '健康与成长 · 陪伴每一天' },
     settings: { title: '设置', sub: '让手账更懂你' },
     more: { title: '更多模块', sub: '生活的方方面面' },
-    knowledge: { title: '知识库', sub: '收集 · 分类 · 回顾' },
+    knowledge: { title: '知识库', sub: '收集 · 分类 · 回顾' }
+  },
 
   init() {
     this.renderNav();
