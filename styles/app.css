@@ -3702,6 +3702,41 @@
   top: 50%;
 }
 
+.idd-crop-handle {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 2px solid var(--forest);
+  border-radius: 50%;
+  z-index: 3;
+  touch-action: none;
+}
+
+.idd-crop-handle-tl {
+  left: -12px;
+  top: -12px;
+  cursor: nwse-resize;
+}
+
+.idd-crop-handle-tr {
+  right: -12px;
+  top: -12px;
+  cursor: nesw-resize;
+}
+
+.idd-crop-handle-bl {
+  left: -12px;
+  bottom: -12px;
+  cursor: nesw-resize;
+}
+
+.idd-crop-handle-br {
+  right: -12px;
+  bottom: -12px;
+  cursor: nwse-resize;
+}
+
 .idd-crop-loading {
   position: absolute;
   inset: 0;

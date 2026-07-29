@@ -299,12 +299,16 @@ const IdDocs = {
     return new Promise((resolve) => {
       const body = `
         <div style="text-align:center;margin-bottom:6px;">
-          <span style="font-size:12px;color:var(--ink-mute);">第 ${index} 张 / 共 ${total} 张 · 拖动方框裁剪</span>
+          <span style="font-size:12px;color:var(--ink-mute);">第 ${index} 张 / 共 ${total} 张 · 拖动四角缩放，中间移动</span>
         </div>
         <div class="idd-crop-viewport" id="iddCropViewport">
           <img class="idd-crop-img" id="iddCropImg" alt="裁剪" style="visibility:hidden;" />
           <div class="idd-crop-frame" id="iddCropFrame" style="display:none;">
             <div class="idd-crop-cross"></div>
+            <div class="idd-crop-handle idd-crop-handle-tl" data-handle="tl"></div>
+            <div class="idd-crop-handle idd-crop-handle-tr" data-handle="tr"></div>
+            <div class="idd-crop-handle idd-crop-handle-bl" data-handle="bl"></div>
+            <div class="idd-crop-handle idd-crop-handle-br" data-handle="br"></div>
           </div>
           <div class="idd-crop-loading" id="iddCropLoading">加载中...</div>
         </div>
@@ -373,36 +377,66 @@ const IdDocs = {
   },
 
   _bindCropDrag(frame, minX, minY, maxX, maxY) {
-    let isDragging = false;
-    let startX, startY, startLeft, startTop;
+    let mode = null; // 'move' | 'tl' | 'tr' | 'bl' | 'br'
+    let startX = 0, startY = 0;
+    let startLeft = 0, startTop = 0, startW = 0, startH = 0;
+    const MIN_SIZE = 40;
 
     const onStart = (e) => {
-      isDragging = true;
       const touch = e.touches ? e.touches[0] : e;
       startX = touch.clientX;
       startY = touch.clientY;
       startLeft = frame.offsetLeft;
       startTop = frame.offsetTop;
-      frame.style.cursor = 'grabbing';
+      startW = frame.offsetWidth;
+      startH = frame.offsetHeight;
+
+      const handle = e.target.closest('[data-handle]');
+      mode = handle ? handle.dataset.handle : 'move';
+      frame.style.cursor = mode === 'move' ? 'grabbing' : 'nwse-resize';
       e.preventDefault();
+      e.stopPropagation();
     };
 
     const onMove = (e) => {
-      if (!isDragging) return;
+      if (!mode) return;
       const touch = e.touches ? e.touches[0] : e;
       const dx = touch.clientX - startX;
       const dy = touch.clientY - startY;
 
-      const newLeft = Math.max(minX, Math.min(maxX - frame.offsetWidth, startLeft + dx));
-      const newTop = Math.max(minY, Math.min(maxY - frame.offsetHeight, startTop + dy));
+      if (mode === 'move') {
+        const newLeft = Math.max(minX, Math.min(maxX - startW, startLeft + dx));
+        const newTop = Math.max(minY, Math.min(maxY - startH, startTop + dy));
+        frame.style.left = newLeft + 'px';
+        frame.style.top = newTop + 'px';
+      } else {
+        let newLeft = startLeft, newTop = startTop, newW = startW, newH = startH;
 
-      frame.style.left = newLeft + 'px';
-      frame.style.top = newTop + 'px';
+        if (mode.includes('l')) {
+          newLeft = Math.max(minX, Math.min(startLeft + startW - MIN_SIZE, startLeft + dx));
+          newW = startW - (newLeft - startLeft);
+        }
+        if (mode.includes('r')) {
+          newW = Math.max(MIN_SIZE, Math.min(maxX - startLeft, startW + dx));
+        }
+        if (mode.includes('t')) {
+          newTop = Math.max(minY, Math.min(startTop + startH - MIN_SIZE, startTop + dy));
+          newH = startH - (newTop - startTop);
+        }
+        if (mode.includes('b')) {
+          newH = Math.max(MIN_SIZE, Math.min(maxY - startTop, startH + dy));
+        }
+
+        frame.style.left = newLeft + 'px';
+        frame.style.top = newTop + 'px';
+        frame.style.width = newW + 'px';
+        frame.style.height = newH + 'px';
+      }
       e.preventDefault();
     };
 
     const onEnd = () => {
-      isDragging = false;
+      mode = null;
       frame.style.cursor = 'grab';
     };
 
