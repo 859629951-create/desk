@@ -20,6 +20,7 @@ const App = {
 
   moreModules: [
     { key: 'knowledge', icon: '📖', label: '知识库', sub: '小红书收藏收集' },
+    { key: 'idDocs', icon: '🪪', label: '证件管理', sub: '证件照片加水印保存' },
     { key: 'pet', icon: '🐾', label: '宠物记录', sub: '健康与成长' },
     { key: 'recipe', icon: '🍳', label: '我会下厨', sub: '菜谱与买菜' },
     { key: 'museum', icon: '🏺', label: '博物馆掠影', sub: '文物识别' },
@@ -41,7 +42,8 @@ const App = {
     pet: { title: '宠物记录', sub: '健康与成长 · 陪伴每一天' },
     settings: { title: '设置', sub: '让手账更懂你' },
     more: { title: '更多模块', sub: '生活的方方面面' },
-    knowledge: { title: '知识库', sub: '收集 · 分类 · 回顾' }
+    knowledge: { title: '知识库', sub: '收集 · 分类 · 回顾' },
+    idDocs: { title: '证件管理', sub: '拍照存档 · 水印保护' }
   },
 
   init() {

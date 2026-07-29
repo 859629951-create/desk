@@ -3585,3 +3585,58 @@
 .toggle-switch.active .toggle-slider::before {
   transform: translateX(18px);
 }
+
+/* ============================================
+   证件管理样式
+   ============================================ */
+.id-docs-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.id-doc-card {
+  background: var(--paper-card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ink-line);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 1px 6px var(--paper-shadow);
+}
+.id-doc-card:active {
+  transform: scale(0.96);
+  box-shadow: 0 2px 12px rgba(47, 74, 40, 0.12);
+}
+
+.idd-thumb {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--paper-deep);
+  border-bottom: 1px solid var(--ink-line);
+}
+
+.idd-info {
+  padding: 8px 10px;
+}
+
+.idd-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.idd-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--ink-mute);
+}

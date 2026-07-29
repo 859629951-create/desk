@@ -1,5 +1,5 @@
-// 今日有雨 Service Worker v4 - 健壮版 + Share Target + 强制更新
-const CACHE_NAME = 'desk-v34';
+// 今日有雨 Service Worker v5 - 健壮版 + Share Target + 强制更新
+const CACHE_NAME = 'desk-v35';
 
 // 核心资源列表
 const CORE_ASSETS = [
@@ -26,6 +26,7 @@ const CORE_ASSETS = [
   './modules/museum.js',
   './modules/pet.js',
   './modules/knowledge.js',
+  './modules/id-docs.js',
   './modules/settings.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
