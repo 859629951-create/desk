@@ -248,6 +248,8 @@ const UI = {
       input.type = 'file';
       input.accept = 'image/*';
       input.multiple = maxCount > 1;
+      input.style.cssText = 'position:fixed;left:-9999px;opacity:0;';
+      document.body.appendChild(input);
       input.onchange = async () => {
         const files = Array.from(input.files).slice(0, maxCount);
         const results = [];
@@ -255,9 +257,11 @@ const UI = {
           const dataUrl = await this.compressImage(f, 1200, 0.8);
           results.push(dataUrl);
         }
+        input.remove();
         resolve(results);
       };
-      input.click();
+      // 部分浏览器需要延迟触发
+      requestAnimationFrame(() => input.click());
     });
   },
 
@@ -266,13 +270,16 @@ const UI = {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*';
+      input.style.cssText = 'position:fixed;left:-9999px;opacity:0;';
+      document.body.appendChild(input);
       input.onchange = async () => {
         const f = input.files[0];
-        if (!f) return resolve(null);
+        if (!f) { input.remove(); return resolve(null); }
         const dataUrl = await this.compressImage(f, 1400, 0.85);
+        input.remove();
         resolve(dataUrl);
       };
-      input.click();
+      requestAnimationFrame(() => input.click());
     });
   },
 
