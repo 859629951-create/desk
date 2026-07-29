@@ -3746,3 +3746,52 @@
   color: var(--ink-mute);
   font-size: 13px;
 }
+
+/* 多照片角标 */
+.idd-count-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(47, 74, 40, 0.85);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  backdrop-filter: blur(4px);
+}
+
+/* 详情页照片横向滚动 */
+.idd-photos-scroll {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 6px;
+  margin: 0 -4px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.idd-photos-scroll::-webkit-scrollbar {
+  height: 3px;
+}
+
+.idd-photos-scroll::-webkit-scrollbar-thumb {
+  background: var(--ink-line);
+  border-radius: 2px;
+}
+
+.idd-photo-item {
+  flex: 0 0 78%;
+  scroll-snap-align: center;
+}
+
+.idd-photo-label {
+  font-size: 11px;
+  color: var(--ink-mute);
+  margin-bottom: 4px;
+  text-align: center;
+  font-weight: 500;
+}
