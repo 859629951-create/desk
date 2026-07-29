@@ -1,6 +1,7 @@
 /* ============================================
    证件管理模块 - 上传/查看/加水印保存
    一个证件项目可包含多张照片（如身份证正反面）
+   水印为每个证件单独设置
    ============================================ */
 
 const IdDocs = {
@@ -28,7 +29,7 @@ const IdDocs = {
     '仅限本人使用'
   ],
 
-  /* 水印默认设置 */
+  /* 水印默认设置（新证件默认值） */
   defaultWatermark: {
     text: '仅供证件办理使用',
     fontSize: 28,
@@ -36,6 +37,12 @@ const IdDocs = {
     color: '#333333',
     position: 'tile',
     rotate: -25
+  },
+
+  /* 获取证件的有效水印设置 */
+  _getWatermark(item) {
+    if (item.watermark && item.watermark.text) return item.watermark;
+    return { ...this.defaultWatermark };
   },
 
   /* 统一获取图片数组（兼容旧数据） */
@@ -95,7 +102,7 @@ const IdDocs = {
 
       <div style="display:flex;gap:8px;margin-bottom:14px;">
         <button class="btn btn-jade" id="iddUploadBtn" style="flex:1;font-size:12px;">📷 上传证件</button>
-        <button class="btn btn-ghost" id="iddWatermarkSettings" style="font-size:12px;">⚙️ 水印设置</button>
+        <button class="btn btn-ghost" id="iddWatermarkSettings" style="font-size:12px;">⚙️ 默认水印</button>
       </div>
 
       <div id="idDocsGrid" class="id-docs-grid"></div>
@@ -164,6 +171,8 @@ const IdDocs = {
   _showDetail(item) {
     const catInfo = this.categories.find(c => c.key === (item.category || 'other'));
     const imgs = this._getImages(item);
+    const wm = this._getWatermark(item);
+    const hasWm = !!(item.watermark && item.watermark.text);
 
     const photosHtml = imgs.map((img, i) => `
       <div class="idd-photo-item" data-idx="${i}">
@@ -182,22 +191,26 @@ const IdDocs = {
       <div style="margin-bottom:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
         <span class="chip gray">${catInfo?.icon || '📄'} ${catInfo?.label || '其他'}</span>
         <span class="chip blue" style="font-size:11px;">📷 ${imgs.length}张照片</span>
+        ${hasWm ? `<span class="chip gray" style="font-size:11px;">🔒 ${wm.text}</span>` : '<span class="chip gray" style="font-size:11px;opacity:0.5;">无锁水印</span>'}
         ${item.notes ? `<span class="chip gray" style="font-size:11px;">📝 ${item.notes}</span>` : ''}
       </div>
       <div class="idd-photos-scroll">${photosHtml}</div>
       <div style="font-size:11px;color:var(--ink-mute);margin:10px 0 14px;text-align:center;">
         上传于 ${UI.formatDate(item.createdAt, true)}
       </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:var(--paper-deep);border-radius:8px;font-size:12px;">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;">
-          <input type="checkbox" id="iddWatermarkToggle" style="width:16px;height:16px;" />
-          <span>添加水印</span>
-        </label>
-        <div style="flex:1;display:flex;align-items:center;gap:6px;" id="iddWatermarkOpts">
+      <div style="margin-bottom:10px;padding:10px 12px;background:var(--paper-deep);border-radius:8px;font-size:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${hasWm ? '8px' : '0'};">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="iddWatermarkToggle" style="width:16px;height:16px;" ${hasWm ? 'checked' : ''} />
+            <span>保存时添加水印</span>
+          </label>
+          <button class="btn btn-ghost" id="iddWmEdit" style="font-size:10px;padding:2px 8px;">⚙️</button>
+        </div>
+        <div id="iddWatermarkOpts" style="display:flex;align-items:center;gap:6px;${hasWm ? '' : 'opacity:0.4;pointer-events:none;'}">
           <select id="iddWmPreset" style="font-size:11px;flex:1;padding:4px;border-radius:6px;border:1px solid var(--ink-line);">
-            ${this.watermarkPresets.map(t => `<option value="${t}" ${this.defaultWatermark.text === t ? 'selected' : ''}>${t}</option>`).join('')}
+            ${this.watermarkPresets.map(t => `<option value="${t}" ${wm.text === t ? 'selected' : ''}>${t}</option>`).join('')}
           </select>
-          <input id="iddWmCustom" type="text" placeholder="自定义" value="${this.defaultWatermark.text}" style="font-size:11px;flex:1;padding:4px;border-radius:6px;border:1px solid var(--ink-line);" />
+          <input id="iddWmCustom" type="text" placeholder="自定义" value="${wm.text}" style="font-size:11px;flex:1;padding:4px;border-radius:6px;border:1px solid var(--ink-line);" />
         </div>
       </div>
       <div class="form-actions" style="margin-bottom:8px;">
@@ -215,27 +228,43 @@ const IdDocs = {
       const opts = root.querySelector('#iddWatermarkOpts');
       const preset = root.querySelector('#iddWmPreset');
       const custom = root.querySelector('#iddWmCustom');
+      const wmEdit = root.querySelector('#iddWmEdit');
+
+      const syncWmState = () => {
+        const on = toggle.checked;
+        opts.style.opacity = on ? '1' : '0.4';
+        opts.style.pointerEvents = on ? 'auto' : 'none';
+      };
 
       toggle.onchange = () => {
-        opts.style.opacity = toggle.checked ? '1' : '0.4';
-        opts.style.pointerEvents = toggle.checked ? 'auto' : 'none';
+        syncWmState();
+        // 自动保存水印开关状态
+        this._saveWatermarkState(item, toggle, custom, preset);
       };
-      opts.style.opacity = '0.4';
-      opts.style.pointerEvents = 'none';
 
-      preset.onchange = () => { custom.value = preset.value; };
+      preset.onchange = () => {
+        custom.value = preset.value;
+        this._saveWatermarkState(item, toggle, custom, preset);
+      };
       custom.oninput = () => {
         const match = this.watermarkPresets.find(p => p === custom.value);
         if (match) preset.value = match;
+        this._saveWatermarkState(item, toggle, custom, preset);
+      };
+
+      wmEdit.onclick = () => {
+        UI.hideSheet();
+        this._editWatermark(item);
       };
 
       // 全部保存
       root.querySelector('#iddSaveAll').onclick = async () => {
         const useWatermark = toggle.checked;
         const wmText = custom.value.trim() || this.defaultWatermark.text;
+        const wmConfig = useWatermark ? { ...this._getWatermark(item), text: wmText } : null;
         UI.toast(useWatermark ? '正在生成带水印的图片...' : '正在保存...');
         for (const img of imgs) {
-          await this._saveToAlbum(img.data, useWatermark ? wmText : null);
+          await this._saveToAlbum(img.data, wmConfig);
         }
       };
 
@@ -245,8 +274,9 @@ const IdDocs = {
           const idx = parseInt(btn.dataset.idx);
           const useWatermark = toggle.checked;
           const wmText = custom.value.trim() || this.defaultWatermark.text;
+          const wmConfig = useWatermark ? { ...this._getWatermark(item), text: wmText } : null;
           UI.toast(useWatermark ? '正在生成带水印的图片...' : '正在保存...');
-          await this._saveToAlbum(imgs[idx].data, useWatermark ? wmText : null);
+          await this._saveToAlbum(imgs[idx].data, wmConfig);
         };
       });
 
@@ -302,11 +332,106 @@ const IdDocs = {
 
       root.querySelector('#iddDelete').onclick = async () => {
         if (await UI.confirm('确定删除整个证件项目？')) {
-          await db.remove(db.STORES.idDocs, item.id);
+          await db.remove(db.STORES.idDocs, item);
           UI.hideSheet();
           UI.toast('已删除');
           this._loadAndRender();
         }
+      };
+    });
+  },
+
+  /* 快速保存水印开关状态 */
+  async _saveWatermarkState(item, toggle, custom, preset) {
+    if (toggle.checked) {
+      item.watermark = {
+        ...this._getWatermark(item),
+        text: custom.value.trim() || this.defaultWatermark.text
+      };
+    } else {
+      item.watermark = { text: '', fontSize: 28, opacity: 0.18, color: '#333333', position: 'tile', rotate: -25 };
+    }
+    await db.put(db.STORES.idDocs, item);
+  },
+
+  /* 编辑水印详细设置 */
+  _editWatermark(item) {
+    const wm = this._getWatermark(item);
+    const body = `
+      <div class="form-group">
+        <label>水印文字</label>
+        <input id="iddWsText" value="${wm.text || ''}" placeholder="水印文字内容" />
+      </div>
+      <div class="form-group">
+        <label>预设模板</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${this.watermarkPresets.map(t => `
+            <button class="chip gray idd-ws-preset" data-text="${t}" style="cursor:pointer;font-size:11px;">${t}</button>
+          `).join('')}
+        </div>
+      </div>
+      <div class="form-group">
+        <label>字号: <span id="iddWsSizeLabel">${wm.fontSize || 28}</span>px</label>
+        <input type="range" id="iddWsSize" min="16" max="60" value="${wm.fontSize || 28}" style="width:100%;" />
+      </div>
+      <div class="form-group">
+        <label>透明度: <span id="iddWsOpacityLabel">${Math.round((wm.opacity || 0.18) * 100)}</span>%</label>
+        <input type="range" id="iddWsOpacity" min="5" max="60" value="${Math.round((wm.opacity || 0.18) * 100)}" style="width:100%;" />
+      </div>
+      <div class="form-group">
+        <label>位置</label>
+        <select id="iddWsPos">
+          <option value="tile" ${wm.position === 'tile' ? 'selected' : ''}>平铺（推荐）</option>
+          <option value="center" ${wm.position === 'center' ? 'selected' : ''}>居中</option>
+          <option value="topLeft" ${wm.position === 'topLeft' ? 'selected' : ''}>左上角</option>
+          <option value="topRight" ${wm.position === 'topRight' ? 'selected' : ''}>右上角</option>
+          <option value="bottomLeft" ${wm.position === 'bottomLeft' ? 'selected' : ''}>左下角</option>
+          <option value="bottomRight" ${wm.position === 'bottomRight' ? 'selected' : ''}>右下角</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>旋转角度: <span id="iddWsRotateLabel">${wm.rotate || -25}</span>°</label>
+        <input type="range" id="iddWsRotate" min="-60" max="60" value="${wm.rotate || -25}" style="width:100%;" />
+      </div>
+      <div class="form-group">
+        <label>水印颜色</label>
+        <input type="color" id="iddWsColor" value="${wm.color || '#333333'}" style="width:100%;height:36px;border-radius:8px;border:1px solid var(--ink-line);" />
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" id="iddWsCancel">取消</button>
+        <button class="btn btn-primary" id="iddWsSave">保存</button>
+      </div>
+    `;
+
+    UI.showSheet('水印设置', body, (root) => {
+      const updateLabels = () => {
+        root.querySelector('#iddWsSizeLabel').textContent = root.querySelector('#iddWsSize').value;
+        root.querySelector('#iddWsOpacityLabel').textContent = root.querySelector('#iddWsOpacity').value;
+        root.querySelector('#iddWsRotateLabel').textContent = root.querySelector('#iddWsRotate').value;
+      };
+      root.querySelector('#iddWsSize').oninput = updateLabels;
+      root.querySelector('#iddWsOpacity').oninput = updateLabels;
+      root.querySelector('#iddWsRotate').oninput = updateLabels;
+      root.querySelectorAll('.idd-ws-preset').forEach(btn => {
+        btn.onclick = () => { root.querySelector('#iddWsText').value = btn.dataset.text; };
+      });
+      root.querySelector('#iddWsCancel').onclick = () => {
+        UI.hideSheet();
+        this._showDetail(item);
+      };
+      root.querySelector('#iddWsSave').onclick = async () => {
+        item.watermark = {
+          text: root.querySelector('#iddWsText').value.trim() || this.defaultWatermark.text,
+          fontSize: parseInt(root.querySelector('#iddWsSize').value),
+          opacity: parseInt(root.querySelector('#iddWsOpacity').value) / 100,
+          position: root.querySelector('#iddWsPos').value,
+          rotate: parseInt(root.querySelector('#iddWsRotate').value),
+          color: root.querySelector('#iddWsColor').value
+        };
+        await db.put(db.STORES.idDocs, item);
+        UI.hideSheet();
+        UI.toast('水印已保存');
+        this._showDetail(item);
       };
     });
   },
@@ -357,14 +482,12 @@ const IdDocs = {
         item.category = root.querySelector('#iddEditCat').value;
         item.notes = root.querySelector('#iddEditNotes').value.trim();
 
-        // 更新标签
         const labelInputs = root.querySelectorAll('.idd-edit-label');
         labelInputs.forEach(input => {
           const idx = parseInt(input.dataset.idx);
           if (item.images) {
             item.images[idx].label = input.value.trim();
           } else {
-            // 兼容旧数据：迁移为 images 数组
             item.images = imgs.map((img, i) => ({
               data: img.data,
               thumbnail: img.thumbnail,
@@ -398,9 +521,12 @@ const IdDocs = {
     const croppedImages = [];
     for (let i = 0; i < images.length; i++) {
       const result = await this._cropOne(images[i], i + 1, images.length, croppedImages.length + 1);
-      if (result) {
-        croppedImages.push(result);
+      if (!result) {
+        // 用户取消了上传
+        if (!this._uploading) return;
+        continue;
       }
+      croppedImages.push(result);
     }
 
     if (croppedImages.length === 0) {
@@ -409,7 +535,7 @@ const IdDocs = {
       return;
     }
 
-    // ====== Step 2: 填写一组证件信息 ======
+    // ====== Step 2: 填写证件信息（通过 UI.showSheet 确保 Sheet 状态） ======
     const info = await this._showInfoStep(croppedImages, this._lastCategory);
     if (!info) {
       this._uploading = false;
@@ -448,6 +574,7 @@ const IdDocs = {
   _cropOne(imageDataUrl, index, total, existingCount) {
     return new Promise((resolve) => {
       let cleanupDrag = null;
+      let resolved = false;
       const img = new Image();
 
       const defaultLabel = existingCount === 1 ? '正面' : existingCount === 2 ? '反面' : `第${existingCount}张`;
@@ -490,6 +617,8 @@ const IdDocs = {
         const labelInput = root.querySelector('#iddCropLabel');
 
         img.onload = () => {
+          // 如果已经 resolve 了（比如用户点了取消），不再操作 DOM
+          if (resolved) return;
           loading.style.display = 'none';
           imgEl.src = imageDataUrl;
           imgEl.style.visibility = 'visible';
@@ -518,12 +647,17 @@ const IdDocs = {
           cleanupDrag = this._bindCropDrag(frame, offsetX, offsetY, offsetX + displayW, offsetY + displayH);
         };
         img.onerror = () => {
+          if (resolved) return;
           loading.textContent = '图片加载失败，请跳过此张';
           loading.style.color = '#c44';
         };
         img.src = imageDataUrl;
 
         const finish = (data, label) => {
+          if (resolved) return;
+          resolved = true;
+          // 取消图片加载，防止 onload 操作已销毁的 DOM
+          img.src = '';
           if (cleanupDrag) { cleanupDrag(); cleanupDrag = null; }
           resolve(data ? { data, label: label || defaultLabel } : null);
         };
@@ -540,16 +674,15 @@ const IdDocs = {
         };
         root.querySelector('#iddCropCancelAll').onclick = (e) => {
           e.stopPropagation();
-          if (cleanupDrag) { cleanupDrag(); cleanupDrag = null; }
+          finish(null, null);
           this._uploading = false;
           UI.hideSheet();
-          resolve(null);
         };
       });
     });
   },
 
-  /* 填写证件信息（所有照片共用一组信息） */
+  /* 填写证件信息（通过 UI.showSheet 确保 Sheet 状态稳定） */
   _showInfoStep(croppedImages, defaultCategory) {
     const labelSummary = croppedImages.map(img => img.label || '照片').join(' · ');
     const defaultTitle = defaultCategory === 'idcard' ? '身份证' :
@@ -585,22 +718,21 @@ const IdDocs = {
       </div>
     `;
 
-    UI.sheetTitleEl.textContent = '证件信息';
-    UI.sheetBodyEl.innerHTML = infoBody;
-    UI.sheetBodyEl.scrollTop = 0;
-
     return new Promise((resolve) => {
-      UI.sheetBodyEl.querySelector('#iddInfoCancel').onclick = (e) => {
-        e.stopPropagation();
-        resolve(null);
-      };
-      UI.sheetBodyEl.querySelector('#iddInfoSave').onclick = (e) => {
-        e.stopPropagation();
-        const title = UI.sheetBodyEl.querySelector('#iddInfoTitle').value.trim() || defaultTitle;
-        const category = UI.sheetBodyEl.querySelector('#iddInfoCat').value;
-        const notes = UI.sheetBodyEl.querySelector('#iddInfoNotes').value.trim();
-        resolve({ title, category, notes });
-      };
+      // 使用 UI.showSheet 确保 Sheet 状态正确建立
+      UI.showSheet('证件信息', infoBody, (root) => {
+        root.querySelector('#iddInfoCancel').onclick = (e) => {
+          e.stopPropagation();
+          resolve(null);
+        };
+        root.querySelector('#iddInfoSave').onclick = (e) => {
+          e.stopPropagation();
+          const title = root.querySelector('#iddInfoTitle').value.trim() || defaultTitle;
+          const category = root.querySelector('#iddInfoCat').value;
+          const notes = root.querySelector('#iddInfoNotes').value.trim();
+          resolve({ title, category, notes });
+        };
+      });
     });
   },
 
@@ -743,12 +875,12 @@ const IdDocs = {
     });
   },
 
-  /* 水印设置 */
+  /* 默认水印设置（新证件无自定义水印时使用此默认值） */
   _watermarkSettings() {
-    const wm = JSON.parse(localStorage.getItem('idDocs_watermark') || JSON.stringify(this.defaultWatermark));
+    const wm = JSON.parse(localStorage.getItem('idDocs_defaultWatermark') || JSON.stringify(this.defaultWatermark));
     const body = `
       <div class="form-group">
-        <label>水印文字</label>
+        <label>默认水印文字</label>
         <input id="iddWsText" value="${wm.text || ''}" placeholder="水印文字内容" />
       </div>
       <div class="form-group">
@@ -788,11 +920,11 @@ const IdDocs = {
       </div>
       <div class="form-actions">
         <button class="btn btn-ghost" id="iddWsReset">恢复默认</button>
-        <button class="btn btn-primary" id="iddWsSave">保存设置</button>
+        <button class="btn btn-primary" id="iddWsSave">保存</button>
       </div>
     `;
 
-    UI.showSheet('水印设置', body, (root) => {
+    UI.showSheet('默认水印设置', body, (root) => {
       const updateLabels = () => {
         root.querySelector('#iddWsSizeLabel').textContent = root.querySelector('#iddWsSize').value;
         root.querySelector('#iddWsOpacityLabel').textContent = root.querySelector('#iddWsOpacity').value;
@@ -810,7 +942,7 @@ const IdDocs = {
       });
 
       root.querySelector('#iddWsReset').onclick = () => {
-        localStorage.removeItem('idDocs_watermark');
+        localStorage.removeItem('idDocs_defaultWatermark');
         UI.hideSheet();
         UI.toast('已恢复默认水印设置');
       };
@@ -824,20 +956,20 @@ const IdDocs = {
           rotate: parseInt(root.querySelector('#iddWsRotate').value),
           color: root.querySelector('#iddWsColor').value
         };
-        localStorage.setItem('idDocs_watermark', JSON.stringify(settings));
+        localStorage.setItem('idDocs_defaultWatermark', JSON.stringify(settings));
         UI.hideSheet();
-        UI.toast('水印设置已保存');
+        UI.toast('默认水印已保存（新证件将使用此设置）');
       };
     });
   },
 
-  /* 加水印并保存到相册 */
-  async _saveToAlbum(imageDataUrl, watermarkText) {
+  /* 加水印并保存到相册（wmConfig 为证件的水印设置对象或 null） */
+  async _saveToAlbum(imageDataUrl, wmConfig) {
     try {
       let finalImage = imageDataUrl;
 
-      if (watermarkText) {
-        finalImage = await this._applyWatermark(imageDataUrl, watermarkText);
+      if (wmConfig && wmConfig.text) {
+        finalImage = await this._applyWatermark(imageDataUrl, wmConfig);
       }
 
       const resp = await fetch(finalImage);
@@ -876,9 +1008,9 @@ const IdDocs = {
   },
 
   /* 给图片添加水印 */
-  _applyWatermark(imageDataUrl, text) {
+  _applyWatermark(imageDataUrl, wmConfig) {
     return new Promise((resolve) => {
-      const wm = JSON.parse(localStorage.getItem('idDocs_watermark') || JSON.stringify(this.defaultWatermark));
+      const wm = wmConfig || this.defaultWatermark;
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
@@ -894,6 +1026,7 @@ const IdDocs = {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
+        const text = wm.text || '';
         const textWidth = ctx.measureText(text).width;
         const textHeight = wm.fontSize || 28;
         const padding = textWidth * 1.5;
