@@ -103,8 +103,14 @@ const App = {
   },
 
   bindEvents() {
-    document.getElementById('sheetClose').addEventListener('click', () => UI.hideSheet());
-    document.getElementById('overlay').addEventListener('click', () => UI.hideSheet());
+    document.getElementById('sheetClose').addEventListener('click', () => {
+      if (window.IdDocs && IdDocs._uploading) return;
+      UI.hideSheet();
+    });
+    document.getElementById('overlay').addEventListener('click', () => {
+      if (window.IdDocs && IdDocs._uploading) return;
+      UI.hideSheet();
+    });
     document.getElementById('searchBtn').addEventListener('click', () => UI.showSearch());
     document.getElementById('fab').addEventListener('click', () => {
       if (this.currentFab) this.currentFab();

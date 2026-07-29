@@ -265,63 +265,75 @@ const IdDocs = {
 
   /* 上传证件 - 多选 + 裁剪 */
   async _upload() {
+    if (this._uploading) return;
+    this._uploading = true;
+
     const images = await UI.pickImages(9);
-    if (!images || images.length === 0) return;
+    if (!images || images.length === 0) {
+      this._uploading = false;
+      return;
+    }
 
     let savedCount = 0;
     let defaultCategory = 'idcard';
 
     for (let i = 0; i < images.length; i++) {
-      const cropped = await this._cropOne(images[i], i + 1, images.length);
-      const finalImage = cropped || images[i];
+      const result = await this._processOne(images[i], i + 1, images.length, defaultCategory);
+      if (!result) continue;
 
-      const info = await this._inputInfo(finalImage, i + 1, images.length, defaultCategory);
-      if (!info) continue;
-
-      defaultCategory = info.category;
-      const thumbnail = await this._generateThumbnail(finalImage, 300);
+      defaultCategory = result.category;
+      const thumbnail = await this._generateThumbnail(result.imageData, 300);
       await db.add(db.STORES.idDocs, {
-        title: info.title,
-        category: info.category,
-        notes: info.notes,
-        imageData: finalImage,
+        title: result.title,
+        category: result.category,
+        notes: result.notes,
+        imageData: result.imageData,
         thumbnail
       });
       savedCount++;
     }
 
+    this._uploading = false;
+    UI.hideSheet();
     this._loadAndRender();
     if (savedCount > 0) UI.toast(`已保存 ${savedCount} 张证件照片`);
   },
 
-  /* 单张裁剪 */
-  _cropOne(imageDataUrl, index, total) {
+  /* 裁剪 + 信息填写 合并在一个 Sheet 中 */
+  _processOne(imageDataUrl, index, total, defaultCategory) {
     return new Promise((resolve) => {
-      const body = `
-        <div style="text-align:center;margin-bottom:6px;">
-          <span style="font-size:12px;color:var(--ink-mute);">第 ${index} 张 / 共 ${total} 张 · 拖动四角缩放，中间移动</span>
-        </div>
-        <div class="idd-crop-viewport" id="iddCropViewport">
-          <img class="idd-crop-img" id="iddCropImg" alt="裁剪" style="visibility:hidden;" />
-          <div class="idd-crop-frame" id="iddCropFrame" style="display:none;">
-            <div class="idd-crop-cross"></div>
-            <div class="idd-crop-handle idd-crop-handle-tl" data-handle="tl"></div>
-            <div class="idd-crop-handle idd-crop-handle-tr" data-handle="tr"></div>
-            <div class="idd-crop-handle idd-crop-handle-bl" data-handle="bl"></div>
-            <div class="idd-crop-handle idd-crop-handle-br" data-handle="br"></div>
+      let cleanupDrag = null;
+      const img = new Image();
+      let croppedImage = null;
+
+      // ====== Step 1: 裁剪界面 ======
+      const cropBody = `
+        <div id="iddCropStep">
+          <div style="text-align:center;margin-bottom:6px;">
+            <span style="font-size:12px;color:var(--ink-mute);">第 ${index} 张 / 共 ${total} 张 · 拖动四角缩放，中间移动</span>
           </div>
-          <div class="idd-crop-loading" id="iddCropLoading">加载中...</div>
-        </div>
-        <div class="form-actions" style="margin-top:12px;">
-          <button class="btn btn-ghost" id="iddCropSkip">跳过裁剪</button>
-          <button class="btn btn-primary" id="iddCropOk">确认裁剪</button>
+          <div class="idd-crop-viewport" id="iddCropViewport">
+            <img class="idd-crop-img" id="iddCropImg" alt="裁剪" style="visibility:hidden;" />
+            <div class="idd-crop-frame" id="iddCropFrame" style="display:none;">
+              <div class="idd-crop-cross"></div>
+              <div class="idd-crop-handle idd-crop-handle-tl" data-handle="tl"></div>
+              <div class="idd-crop-handle idd-crop-handle-tr" data-handle="tr"></div>
+              <div class="idd-crop-handle idd-crop-handle-bl" data-handle="bl"></div>
+              <div class="idd-crop-handle idd-crop-handle-br" data-handle="br"></div>
+            </div>
+            <div class="idd-crop-loading" id="iddCropLoading">加载中...</div>
+          </div>
+          <div class="form-actions" style="margin-top:12px;">
+            <button class="btn btn-ghost" id="iddCropSkipBtn">跳过裁剪</button>
+            <button class="btn btn-primary" id="iddCropOkBtn">确认裁剪</button>
+          </div>
+          <div style="text-align:center;margin-top:8px;">
+            <button class="btn btn-ghost" id="iddCropCancelAll" style="color:#c44;font-size:11px;">取消上传</button>
+          </div>
         </div>
       `;
 
-      let cleanupDrag = null;
-      const img = new Image();
-
-      UI.showSheet('裁剪证件照片', body, (root) => {
+      UI.showSheet('裁剪证件照片', cropBody, (root) => {
         const viewport = root.querySelector('#iddCropViewport');
         const frame = root.querySelector('#iddCropFrame');
         const imgEl = root.querySelector('#iddCropImg');
@@ -355,25 +367,87 @@ const IdDocs = {
 
           cleanupDrag = this._bindCropDrag(frame, offsetX, offsetY, offsetX + displayW, offsetY + displayH);
         };
+        img.onerror = () => {
+          loading.textContent = '图片加载失败，请跳过此张';
+          loading.style.color = '#c44';
+        };
         img.src = imageDataUrl;
 
-        const finish = (cropped) => {
-          if (cleanupDrag) cleanupDrag();
-          UI.hideSheet();
-          resolve(cropped);
+        // 进入信息填写步骤
+        const nextStep = (cropped) => {
+          if (cleanupDrag) { cleanupDrag(); cleanupDrag = null; }
+          croppedImage = cropped || imageDataUrl;
+          this._showInfoStep(croppedImage, index, total, defaultCategory, resolve);
         };
 
-        root.querySelector('#iddCropSkip').onclick = () => finish(null);
-        root.querySelector('#iddCropOk').onclick = () => {
-          if (!img.complete) {
-            UI.toast('图片加载中，请稍候');
-            return;
-          }
+        root.querySelector('#iddCropSkipBtn').onclick = (e) => { e.stopPropagation(); nextStep(null); };
+        root.querySelector('#iddCropOkBtn').onclick = (e) => {
+          e.stopPropagation();
+          if (!img.complete) { UI.toast('图片加载中，请稍候'); return; }
           const cropped = this._performCrop(imageDataUrl, img, frame, viewport);
-          finish(cropped);
+          nextStep(cropped);
+        };
+        root.querySelector('#iddCropCancelAll').onclick = (e) => {
+          e.stopPropagation();
+          if (cleanupDrag) { cleanupDrag(); cleanupDrag = null; }
+          this._uploading = false;
+          UI.hideSheet();
+          resolve(null);
         };
       });
     });
+  },
+
+  /* 信息填写步骤（复用同一个 Sheet） */
+  _showInfoStep(imageDataUrl, index, total, defaultCategory, resolve) {
+    const infoBody = `
+      <div class="form-group">
+        <label>证件名称</label>
+        <input id="iddInfoTitle" value="证件照片 ${index}" placeholder="如：身份证正面" style="width:100%;" />
+      </div>
+      <div class="form-group">
+        <label>证件类型</label>
+        <select id="iddInfoCat" style="width:100%;">
+          ${this.categories.filter(c => c.key !== 'all').map(c =>
+            `<option value="${c.key}" ${c.key === defaultCategory ? 'selected' : ''}>${c.icon} ${c.label}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>备注（选填）</label>
+        <input id="iddInfoNotes" placeholder="如：有效期至2028年" style="width:100%;" />
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" id="iddInfoSkip">跳过</button>
+        <button class="btn btn-primary" id="iddInfoSave">保存</button>
+      </div>
+      <div style="text-align:center;margin-top:8px;">
+        <button class="btn btn-ghost" id="iddInfoCancelAll" style="color:#c44;font-size:11px;">取消上传</button>
+      </div>
+    `;
+
+    // 直接更新 Sheet 内容，不隐藏再显示
+    UI.sheetTitleEl.textContent = '证件信息';
+    UI.sheetBodyEl.innerHTML = infoBody;
+    UI.sheetBodyEl.scrollTop = 0;
+
+    UI.sheetBodyEl.querySelector('#iddInfoSkip').onclick = (e) => {
+      e.stopPropagation();
+      resolve(null);
+    };
+    UI.sheetBodyEl.querySelector('#iddInfoSave').onclick = (e) => {
+      e.stopPropagation();
+      const title = UI.sheetBodyEl.querySelector('#iddInfoTitle').value.trim() || `证件照片 ${index}`;
+      const category = UI.sheetBodyEl.querySelector('#iddInfoCat').value;
+      const notes = UI.sheetBodyEl.querySelector('#iddInfoNotes').value.trim();
+      resolve({ imageData: imageDataUrl, title, category, notes });
+    };
+    UI.sheetBodyEl.querySelector('#iddInfoCancelAll').onclick = (e) => {
+      e.stopPropagation();
+      this._uploading = false;
+      UI.hideSheet();
+      resolve(null);
+    };
   },
 
   _bindCropDrag(frame, minX, minY, maxX, maxY) {
@@ -488,53 +562,6 @@ const IdDocs = {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(img, finalX, finalY, finalW, finalH, 0, 0, finalW, finalH);
     return canvas.toDataURL('image/jpeg', 0.92);
-  },
-
-  _inputInfo(imageDataUrl, index, total, defaultCategory) {
-    return new Promise((resolve) => {
-      const body = `
-        <div style="text-align:center;margin-bottom:10px;">
-          <img src="${imageDataUrl}" style="max-width:100%;max-height:100px;border-radius:8px;object-fit:cover;" />
-        </div>
-        <div style="text-align:center;margin-bottom:12px;font-size:12px;color:var(--ink-mute);">
-          第 ${index} 张 / 共 ${total} 张
-        </div>
-        <div class="form-group">
-          <label>证件类型</label>
-          <select id="iddInfoCat">
-            ${this.categories.filter(c => c.key !== 'all').map(c =>
-              `<option value="${c.key}" ${c.key === defaultCategory ? 'selected' : ''}>${c.icon} ${c.label}</option>`
-            ).join('')}
-          </select>
-        </div>
-        <div class="form-group">
-          <label>证件名称</label>
-          <input id="iddInfoTitle" value="证件照片 ${index}" placeholder="如：身份证正面" />
-        </div>
-        <div class="form-group">
-          <label>备注（选填）</label>
-          <input id="iddInfoNotes" placeholder="如：有效期至2028年" />
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-ghost" id="iddInfoSkip">跳过</button>
-          <button class="btn btn-primary" id="iddInfoSave">保存</button>
-        </div>
-      `;
-
-      UI.showSheet('证件信息', body, (root) => {
-        root.querySelector('#iddInfoSkip').onclick = () => {
-          UI.hideSheet();
-          resolve(null);
-        };
-        root.querySelector('#iddInfoSave').onclick = () => {
-          const title = root.querySelector('#iddInfoTitle').value.trim() || `证件照片 ${index}`;
-          const category = root.querySelector('#iddInfoCat').value;
-          const notes = root.querySelector('#iddInfoNotes').value.trim();
-          UI.hideSheet();
-          resolve({ title, category, notes });
-        };
-      });
-    });
   },
 
   /* 生成缩略图 */
