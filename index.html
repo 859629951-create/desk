@@ -12,8 +12,8 @@
   <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png" />
-  <link rel="stylesheet" href="styles/base.css?v=40" />
-  <link rel="stylesheet" href="styles/app.css?v=40" />
+  <link rel="stylesheet" href="styles/base.css?v=49" />
+  <link rel="stylesheet" href="styles/app.css?v=49" />
   <link href="https://fonts.googleapis.com/css2?family=Long+Cang&family=Noto+Serif+SC:wght@400;600;700;900&family=DM+Serif+Display&display=swap" rel="stylesheet" />
   <title>今日有雨</title>
 </head>
@@ -50,47 +50,76 @@
 
   <button class="fab" id="fab" style="display:none">+</button>
 
-  <script src="scripts/db.js?v=40"></script>
-  <script src="scripts/ai.js?v=40"></script>
-  <script src="scripts/router.js?v=40"></script>
-  <script src="scripts/notify.js?v=40"></script>
-  <script src="scripts/app.js?v=40"></script>
+  <script src="scripts/db.js?v=49"></script>
+  <script src="scripts/ai.js?v=49"></script>
+  <script src="scripts/router.js?v=49"></script>
+  <script src="scripts/notify.js?v=49"></script>
+  <script src="scripts/app.js?v=49"></script>
   <!-- 模块脚本 -->
-  <script src="modules/home.js?v=40"></script>
-  <script src="modules/more.js?v=40"></script>
-  <script src="modules/study.js?v=40"></script>
-  <script src="modules/study-center.js?v=40"></script>
-  <script src="modules/punch.js?v=40"></script>
-  <script src="modules/travel.js?v=40"></script>
-  <script src="modules/interest.js?v=40"></script>
-  <script src="modules/recipe.js?v=40"></script>
-  <script src="modules/account.js?v=40"></script>
-  <script src="modules/work.js?v=40"></script>
-  <script src="modules/museum.js?v=40"></script>
-  <script src="modules/pet.js?v=40"></script>
-  <script src="modules/knowledge.js?v=40"></script>
-  <script src="modules/id-docs.js?v=40"></script>
-  <script src="modules/settings.js?v=40"></script>
+  <script src="modules/home.js?v=49"></script>
+  <script src="modules/more.js?v=49"></script>
+  <script src="modules/study.js?v=49"></script>
+  <script src="modules/study-center.js?v=49"></script>
+  <script src="modules/punch.js?v=49"></script>
+  <script src="modules/travel.js?v=49"></script>
+  <script src="modules/interest.js?v=49"></script>
+  <script src="modules/recipe.js?v=49"></script>
+  <script src="modules/account.js?v=49"></script>
+  <script src="modules/work.js?v=49"></script>
+  <script src="modules/museum.js?v=49"></script>
+  <script src="modules/pet.js?v=49"></script>
+  <script src="modules/kb-skill.js?v=49"></script>
+  <script src="modules/knowledge.js?v=49"></script>
+  <script src="modules/id-docs.js?v=49"></script>
+  <script src="modules/settings.js?v=49"></script>
   <script>
     // 注册 Service Worker + 强制更新检测
+    // 注意：注册 URL 不带版本号，版本号在 sw.js 内部的 CACHE_NAME 中管理
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=40').then(reg => {
+        navigator.serviceWorker.register('sw.js').then(reg => {
           // 检测更新
           reg.addEventListener('updatefound', () => {
             const nw = reg.installing;
             if (nw) {
               nw.addEventListener('statechange', () => {
+                if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                  // 新 SW 已下载，发送 SKIP_WAITING 立即激活
+                  console.log('[SW] 新版本已下载，立即激活');
+                  nw.postMessage({ type: 'SKIP_WAITING' });
+                }
                 if (nw.state === 'activated') {
-                  // 新 SW 已激活，提示用户刷新
-                  console.log('[SW] 新版本已激活');
+                  // 新 SW 已激活，强制刷新页面加载新资源
+                  console.log('[SW] 新版本已激活，刷新页面');
+                  window.location.reload();
                 }
               });
             }
           });
-          // 每 5 分钟检查一次更新
-          setInterval(() => reg.update(), 5 * 60 * 1000);
+
+          // 如果有等待中的 SW，立即激活它
+          if (reg.waiting) {
+            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
+
+          // 页面可见时立即检查更新（不等 5 分钟）
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') reg.update();
+          });
+
+          // 每 30 秒检查一次更新（更积极）
+          setInterval(() => reg.update(), 30 * 1000);
+
+          // 页面加载时立即检查一次更新
+          reg.update();
         }).catch(err => console.error('[SW] 注册失败:', err));
+
+        // 接收 SW 消息
+        navigator.serviceWorker.addEventListener('message', (event) => {
+          if (event.data && event.data.type === 'FORCE_RELOAD') {
+            window.location.reload();
+          }
+        });
       });
     }
   </script>

@@ -42,12 +42,18 @@ router.register('settings', () => {
               <button class="choice ${cfg.preset === 'deepseek' ? 'active' : ''}" data-preset="deepseek">🔮 DeepSeek</button>
             </div>
             <div style="font-size:11px;color:var(--ink-mute);margin-top:6px;">
-              已预置 DeepSeek 配置，开箱即用。
+              DeepSeek 兼容 OpenAI 接口，性价比高。需自行注册获取 API Key。
+              <a href="https://platform.deepseek.com/api_keys" target="_blank" style="color:var(--forest);text-decoration:underline;">点击获取 Key →</a>
             </div>
           </div>
+          ${!cfg.apiKey ? `
+          <div style="padding:10px 12px;background:rgba(196,68,68,0.08);border-radius:8px;margin-bottom:10px;font-size:12px;color:var(--cinnabar);line-height:1.5;">
+            ⚠️ 尚未配置 API Key，知识库智能识别、文物识别等功能将不可用。请在下方输入你的 DeepSeek API Key。
+          </div>
+          ` : ''}
           <div class="form-row">
             <label class="label">API Key</label>
-            <input class="field" id="ai_key" type="password" value="${cfg.apiKey}" placeholder="输入 API Key">
+            <input class="field" id="ai_key" type="password" value="${cfg.apiKey}" placeholder="输入 DeepSeek API Key">
           </div>
           <div class="form-row">
             <label class="label">模型名称</label>
@@ -87,7 +93,7 @@ router.register('settings', () => {
       <div class="section-title">ℹ️ 关于</div>
       <div class="card" style="padding:14px;text-align:center;">
         <div style="font-family:var(--font-display);font-size:20px;color:var(--forest);">今日有雨</div>
-        <div style="font-size:12px;color:var(--ink-mute);margin-top:4px;">v1.0 · 一个温暖的生活记录工作台</div>
+        <div style="font-size:12px;color:var(--ink-mute);margin-top:4px;">v1.1 · 一个温暖的生活记录工作台</div>
         <div style="font-family:var(--font-hand);font-size:13px;color:var(--ink-soft);margin-top:10px;">"记录每一个想被珍藏的日子"</div>
       </div>
 
@@ -243,9 +249,15 @@ router.register('settings', () => {
       model: main.querySelector('#ai_model').value.trim(),
       endpoint: main.querySelector('#ai_ep').value.trim()
     });
+
+    if (!AI.config.apiKey) {
+      resultEl.innerHTML = '<span style="color:var(--cinnabar)">✗ 请先输入 API Key</span>';
+      return;
+    }
+
     resultEl.innerHTML = '<span style="color:var(--ink-mute)">⏳ 正在测试连接...</span>';
     try {
-      const reply = await AI.generate('请回复"连接成功"四个字。', '');
+      const reply = await AI._callOnline('请回复"连接成功"四个字。', '');
       resultEl.innerHTML = `<span style="color:var(--forest)">✓ 连接成功</span><br><span style="color:var(--ink-soft)">${reply.slice(0, 80)}</span>`;
     } catch (e) {
       resultEl.innerHTML = `<span style="color:var(--cinnabar)">✗ 连接失败</span><br><span style="color:var(--ink-soft)">${e.message.slice(0, 120)}</span>`;

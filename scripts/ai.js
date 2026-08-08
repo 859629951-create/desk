@@ -16,12 +16,17 @@ const AI = {
   },
 
   config: {
-    provider: 'online', // 默认启用在线模式（已预置 DeepSeek）
-    apiKey: 'sk-d253396e05d34dc098d272d27c807398',
+    provider: 'online', // 默认启用在线模式
+    apiKey: '', // 用户需在设置中配置自己的 API Key
     endpoint: 'https://api.deepseek.com/v1/chat/completions',
     model: 'deepseek-chat',
     visionModel: 'deepseek-chat',
     preset: 'deepseek'
+  },
+
+  /* 检查 AI 是否就绪（有有效的 API Key） */
+  isReady() {
+    return !!(this.config.apiKey && this.config.provider === 'online');
   },
 
   async loadConfig() {
@@ -29,14 +34,7 @@ const AI = {
       const raw = localStorage.getItem('aiConfig');
       if (raw) {
         const saved = JSON.parse(raw);
-        // 合并保存的配置，但保留预设的默认值兜底
         this.config = { ...this.config, ...saved };
-        // 若保存的 apiKey 为空，回退到内置 DeepSeek key
-        if (!this.config.apiKey) {
-          this.config.apiKey = 'sk-d253396e05d34dc098d272d27c807398';
-          this.config.endpoint = 'https://api.deepseek.com/v1/chat/completions';
-          this.config.model = 'deepseek-chat';
-        }
       }
     } catch (e) {}
   },

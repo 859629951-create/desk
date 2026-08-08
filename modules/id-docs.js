@@ -263,9 +263,7 @@ const IdDocs = {
         const wmText = custom.value.trim() || this.defaultWatermark.text;
         const wmConfig = useWatermark ? { ...this._getWatermark(item), text: wmText } : null;
         UI.toast(useWatermark ? '正在生成带水印的图片...' : '正在保存...');
-        for (const img of imgs) {
-          await this._saveToAlbum(img.data, wmConfig);
-        }
+        await this._saveAllToAlbum(imgs, wmConfig);
       };
 
       // 单张保存
@@ -309,14 +307,18 @@ const IdDocs = {
         const newImages = await UI.pickImages(9);
         if (!newImages || newImages.length === 0) return;
 
-        UI.hideSheet();
+        this._uploading = true;
         for (let i = 0; i < newImages.length; i++) {
           const cropped = await this._cropOne(newImages[i], i + 1, newImages.length, imgs.length + i + 1);
           if (cropped) {
             const thumbnail = await this._generateThumbnail(cropped.data, 300);
             imgs.push({ data: cropped.data, label: cropped.label, thumbnail });
           }
+          if (i < newImages.length - 1) {
+            await new Promise(r => setTimeout(r, 150));
+          }
         }
+        this._uploading = false;
         item.images = imgs;
         await db.put(db.STORES.idDocs, item);
         UI.hideSheet();
@@ -527,6 +529,10 @@ const IdDocs = {
         continue;
       }
       croppedImages.push(result);
+      // 短暂延迟确保 DOM 完全清理后再进入下一张
+      if (i < images.length - 1) {
+        await new Promise(r => setTimeout(r, 150));
+      }
     }
 
     if (croppedImages.length === 0) {
@@ -616,6 +622,12 @@ const IdDocs = {
         const loading = root.querySelector('#iddCropLoading');
         const labelInput = root.querySelector('#iddCropLabel');
 
+        // 防止裁剪区域触摸滚动导致意外行为
+        root.addEventListener('touchmove', (e) => {
+          if (e.target.tagName === 'INPUT') return;
+          e.preventDefault();
+        }, { passive: false });
+
         img.onload = () => {
           // 如果已经 resolve 了（比如用户点了取消），不再操作 DOM
           if (resolved) return;
@@ -664,16 +676,19 @@ const IdDocs = {
 
         root.querySelector('#iddCropSkipBtn').onclick = (e) => {
           e.stopPropagation();
+          if (resolved) return;
           finish(imageDataUrl, labelInput.value.trim());
         };
         root.querySelector('#iddCropOkBtn').onclick = (e) => {
           e.stopPropagation();
+          if (resolved) return;
           if (!img.complete) { UI.toast('图片加载中，请稍候'); return; }
           const cropped = this._performCrop(imageDataUrl, img, frame, viewport);
           finish(cropped, labelInput.value.trim());
         };
         root.querySelector('#iddCropCancelAll').onclick = (e) => {
           e.stopPropagation();
+          if (resolved) return;
           finish(null, null);
           this._uploading = false;
           UI.hideSheet();
@@ -960,6 +975,90 @@ const IdDocs = {
         UI.hideSheet();
         UI.toast('默认水印已保存（新证件将使用此设置）');
       };
+    });
+  },
+
+  /* 全部保存到相册 - 逐张分享保存，每张都会弹出分享面板 */
+  async _saveAllToAlbum(imgs, wmConfig) {
+    // 先处理所有图片（加水印）
+    const processedImages = [];
+    for (const img of imgs) {
+      let finalImage = img.data;
+      if (wmConfig && wmConfig.text) {
+        finalImage = await this._applyWatermark(img.data, wmConfig);
+      }
+      processedImages.push(finalImage);
+    }
+
+    const total = processedImages.length;
+    const canShareFiles = navigator.share && navigator.canShare;
+
+    if (canShareFiles) {
+      // 逐张分享保存：每张照片单独弹出分享面板
+      let savedCount = 0;
+      for (let i = 0; i < total; i++) {
+        const label = imgs[i]?.label || `第${i + 1}张`;
+        if (total > 1) {
+          UI.toast(`正在保存第 ${i + 1}/${total} 张（${label}）`);
+        }
+        try {
+          const resp = await fetch(processedImages[i]);
+          const blob = await resp.blob();
+          const file = new File([blob], `证件照片_${label}.jpg`, { type: 'image/jpeg' });
+
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              files: [file],
+              title: `证件照片 ${label}`
+            });
+            savedCount++;
+          } else {
+            // 不支持分享单文件，回退到下载
+            await this._downloadImage(processedImages[i], `证件照片_${label}`);
+            savedCount++;
+          }
+        } catch (e) {
+          if (e.name === 'AbortError') {
+            // 用户取消了当前这张，询问是否继续保存剩余
+            if (i < total - 1) {
+              const continueSave = await UI.confirm(`已取消「${label}」，是否继续保存剩余 ${total - i - 1} 张？`);
+              if (!continueSave) break;
+            }
+          } else {
+            console.warn(`保存第${i + 1}张失败:`, e);
+            await this._downloadImage(processedImages[i], `证件照片_${label}`);
+            savedCount++;
+          }
+        }
+        // 短暂延迟，确保 iOS 分享面板完全关闭
+        if (i < total - 1) {
+          await new Promise(r => setTimeout(r, 300));
+        }
+      }
+      UI.toast(`已保存 ${savedCount}/${total} 张照片`);
+    } else {
+      // 不支持 Web Share API，逐张下载
+      for (let i = 0; i < total; i++) {
+        const label = imgs[i]?.label || `第${i + 1}张`;
+        await this._downloadImage(processedImages[i], `证件照片_${label}`);
+        if (i < total - 1) {
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+      UI.toast(`已下载${total}张照片`);
+    }
+  },
+
+  /* 下载单张图片 */
+  _downloadImage(imageDataUrl, name) {
+    return new Promise((resolve) => {
+      const a = document.createElement('a');
+      a.href = imageDataUrl;
+      a.download = `${name}_${Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(resolve, 100);
     });
   },
 

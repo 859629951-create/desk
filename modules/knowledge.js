@@ -260,76 +260,58 @@ const Knowledge = {
   },
 
   async _processManualInput(input) {
-    UI.toast('正在智能提取...');
-
-    // 尝试判断是否包含 URL
-    const urlMatch = input.match(/https?:\/\/[^\s]+/);
-    const url = urlMatch ? urlMatch[0] : '';
+    UI.toast('正在识别内容...');
 
     try {
-      const prompt = `你是一个内容分析助手。以下内容来自用户手动输入（可能是链接或文本）。请深度分析并提取结构化信息。
-
-内容：
-${input}
-
-请仔细分析内容，返回 JSON 格式（只返回 JSON，不要其他文字）：
-{
-  "title": "简洁标题（不超过30字）",
-  "summary": "内容概述：这篇内容主要在讲什么（50-80字）",
-  "keyPoints": "核心价值点：提取3-5个最有价值的信息点，每个用「• 」开头换行排列。例如：如果是美食攻略，列出具体推荐的店铺和菜品；如果是旅行路线，列出具体路线和打卡点；如果是教程，列出关键步骤",
-  "category": "从以下选一：美食、旅行、学习、生活、穿搭、美妆、健身、读书、育儿、职场、科技、法律、其他",
-  "tags": ["标签1", "标签2", "标签3"],
-  "source": "来源平台"
-}
-
-注意：
-- keyPoints 是最重要的字段，要提取具体、可操作的信息，不要泛泛而谈
-- 如果是美食攻略，keyPoints 应包含具体店铺名、地址、推荐菜品
-- 如果是旅行路线，keyPoints 应包含具体路线、地点、交通方式
-- 如果是教程/干货，keyPoints 应包含关键步骤、要点、注意事项`;
-
-      const resp = await AI._callOnline(prompt, '');
-      const cleaned = AI._stripCodeFence(resp);
-      const match = cleaned.match(/\{[\s\S]*\}/);
-      let info = {};
-      if (match) {
-        try { info = JSON.parse(match[0]); } catch(e) {}
-      }
-
-      info.title = info.title || input.substring(0, 30);
-      info.summary = info.summary || input;
-      info.keyPoints = info.keyPoints || '';
-      info.category = info.category || '其他';
-      info.tags = info.tags || [];
-      info.source = info.source || (url ? this._detectSource(url) : '手动');
+      // 调用 KbSkill 进行内容识别
+      UI.toast('正在采集信息...');
+      const result = await KbSkill.analyze(input);
 
       await db.add(db.STORES.knowledge, {
-        title: info.title,
-        summary: info.summary,
-        keyPoints: info.keyPoints,
-        category: info.category,
-        tags: info.tags,
-        source: info.source,
-        url: url,
+        title: result.title,
+        summary: result.summary,
+        keyPoints: result.keyPoints,
+        category: result.category,
+        tags: result.tags,
+        source: result.source,
+        url: input.match(/https?:\/\/[^\s]+/)?.[0] || '',
         rawContent: input,
         read: false
       });
 
-      UI.toast(`已导入：${info.title}`);
+      UI.toast(`已导入：${result.title}`);
       this._loadAndRender();
     } catch (e) {
-      // AI 失败也要保存
+      console.warn('KbSkill 分析失败:', e.message);
+
+      // 降级：保存原始内容
+      const url = input.match(/https?:\/\/[^\s]+/)?.[0] || '';
+      const source = this._detectSource(url);
+      const fallbackTitle = input.substring(0, 30);
+
       await db.add(db.STORES.knowledge, {
-        title: input.substring(0, 30),
+        title: fallbackTitle,
         summary: input,
+        keyPoints: '',
         category: '其他',
         tags: [],
-        source: url ? this._detectSource(url) : '手动',
+        source: source,
         url: url,
         rawContent: input,
         read: false
       });
-      UI.toast('已导入（未分类）');
+
+      // 根据错误类型给出精准提示
+      const msg = e.message;
+      if (msg === 'API_KEY_NOT_CONFIGURED' || msg === 'API_KEY_INVALID') {
+        UI.toast('AI Key 无效，请到「设置」配置有效的 API Key');
+      } else if (msg === 'API_RATE_LIMIT') {
+        UI.toast('AI 请求过于频繁，已导入原始内容');
+      } else if (msg === 'NETWORK_ERROR') {
+        UI.toast('网络连接失败，已导入原始内容');
+      } else {
+        UI.toast('AI 分析失败，已导入原始内容（可在详情中编辑）');
+      }
       this._loadAndRender();
     }
   },
@@ -337,11 +319,95 @@ ${input}
   _detectSource(url) {
     if (!url) return '未知';
     if (url.includes('xiaohongshu') || url.includes('xhslink')) return '小红书';
+    if (url.includes('douyin') || url.includes('iesdouyin')) return '抖音';
     if (url.includes('weibo')) return '微博';
     if (url.includes('mp.weixin')) return '微信公众号';
     if (url.includes('zhihu')) return '知乎';
     if (url.includes('bilibili') || url.includes('b23.tv')) return '哔哩哔哩';
+    if (url.includes('kuaishou')) return '快手';
+    if (url.includes('taobao') || url.includes('tmall')) return '淘宝';
+    if (url.includes('jd.com')) return '京东';
     return '网页';
+  },
+
+  /* 从分享文本中提取抖音信息 */
+  _parseDouyinShare(text) {
+    // 抖音分享格式: "8.41 复制打开抖音，看看【哈是琪的图文作品】从前任们传承下来的北京咖啡 https://v.douyin.com/xxx/"
+    const authorMatch = text.match(/【(.+?)的(.+?)】/);
+    const titleMatch = text.match(/】(.+?)(?:\s+https?|$)/);
+    return {
+      author: authorMatch ? authorMatch[1] : '',
+      type: authorMatch ? authorMatch[2] : '',  // 图文作品/视频等
+      title: titleMatch ? titleMatch[1].trim() : ''
+    };
+  },
+
+  /* 尝试通过 CORS 代理抓取 URL 内容 */
+  async _fetchUrlContent(url) {
+    const proxies = [
+      (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+      (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+      (u) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`
+    ];
+
+    for (const proxy of proxies) {
+      try {
+        const proxyUrl = proxy(url);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        const resp = await fetch(proxyUrl, { signal: controller.signal });
+        clearTimeout(timeout);
+
+        if (!resp.ok) continue;
+        const html = await resp.text();
+        if (!html || html.length < 100) continue;
+
+        // 从 HTML 中提取有用文本
+        return this._extractTextFromHtml(html, url);
+      } catch (e) {
+        console.warn('代理抓取失败:', e.message);
+        continue;
+      }
+    }
+    return null;
+  },
+
+  /* 从 HTML 中提取标题、描述、正文 */
+  _extractTextFromHtml(html, url) {
+    let title = '';
+    let description = '';
+    let bodyText = '';
+
+    // 提取 <title>
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (titleMatch) title = titleMatch[1].trim();
+
+    // 提取 meta description
+    const descMatch = html.match(/<meta[^>]+(?:name|property)=["'](?:description|og:description)["'][^>]+content=["']([\s\S]*?)["']/i);
+    if (descMatch) description = descMatch[1].trim();
+
+    // 提取 og:title
+    const ogTitleMatch = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([\s\S]*?)["']/i);
+    if (ogTitleMatch) title = ogTitleMatch[1].trim();
+
+    // 提取正文：去掉 script/style/tag
+    bodyText = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // 截取前 3000 字符
+    if (bodyText.length > 3000) bodyText = bodyText.substring(0, 3000);
+
+    return { title, description, bodyText, url };
   },
 
   _export(items) {

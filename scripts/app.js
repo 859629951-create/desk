@@ -103,14 +103,19 @@ const App = {
   },
 
   bindEvents() {
-    document.getElementById('sheetClose').addEventListener('click', () => {
+    document.getElementById('sheetClose').addEventListener('click', (e) => {
+      if (window.IdDocs && IdDocs._uploading) { e.stopPropagation(); return; }
+      UI.hideSheet();
+    });
+    const overlay = document.getElementById('overlay');
+    overlay.addEventListener('click', () => {
       if (window.IdDocs && IdDocs._uploading) return;
       UI.hideSheet();
     });
-    document.getElementById('overlay').addEventListener('click', () => {
-      if (window.IdDocs && IdDocs._uploading) return;
-      UI.hideSheet();
-    });
+    // 防止裁剪时触摸穿透到 overlay 导致关闭
+    overlay.addEventListener('touchstart', (e) => {
+      if (window.IdDocs && IdDocs._uploading) { e.preventDefault(); e.stopPropagation(); }
+    }, { passive: false });
     document.getElementById('searchBtn').addEventListener('click', () => UI.showSearch());
     document.getElementById('fab').addEventListener('click', () => {
       if (this.currentFab) this.currentFab();

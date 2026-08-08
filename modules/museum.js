@@ -252,13 +252,52 @@ const Museum = {
         <div class="section-title">⏳ 朝代时间轴</div>
         <div class="timeline" id="dynastyTimeline"></div>
 
-        <div class="section-title">🏺 文物掠影</div>
+        <div class="section-title">
+          🏺 文物掠影
+          <span id="relicShareToggle" style="float:right;font-size:12px;color:var(--forest);cursor:pointer;font-weight:400;">🖼 生成分享图</span>
+        </div>
+        <div id="shareSelectBar" style="display:none;margin-bottom:12px;">
+          <div class="card" style="padding:12px;display:flex;align-items:center;gap:10px;">
+            <span id="shareSelectCount" style="font-size:13px;color:var(--ink-soft);flex:1;">已选 0 件</span>
+            <button class="btn btn-ghost" id="shareSelectCancel" style="font-size:12px;padding:6px 14px;">取消</button>
+            <button class="btn btn-primary" id="shareSelectGen" style="font-size:12px;padding:6px 14px;">生成分享图</button>
+          </div>
+        </div>
         <div id="relicList"></div>
       </div>
     `;
 
     main.querySelector('[data-act="back"]').onclick = () => router.navigate('museum');
+    this._shareMode = false;
+    this._shareSelected = new Set();
+    main.querySelector('#relicShareToggle').onclick = () => this._enterShareMode(id, m);
     this.renderRelics(id, m);
+  },
+
+  /* 进入选择模式 */
+  _enterShareMode(museumId, museum) {
+    this._shareMode = true;
+    this._shareSelected = new Set();
+    document.getElementById('shareSelectBar').style.display = 'block';
+    document.getElementById('relicShareToggle').style.display = 'none';
+    this.renderRelics(museumId, museum);
+  },
+
+  /* 退出选择模式 */
+  _exitShareMode(museumId, museum) {
+    this._shareMode = false;
+    this._shareSelected = new Set();
+    const bar = document.getElementById('shareSelectBar');
+    if (bar) bar.style.display = 'none';
+    const toggle = document.getElementById('relicShareToggle');
+    if (toggle) toggle.style.display = '';
+    this.renderRelics(museumId, museum);
+  },
+
+  /* 更新选择计数 */
+  _updateShareCount() {
+    const el = document.getElementById('shareSelectCount');
+    if (el) el.textContent = `已选 ${this._shareSelected.size} 件`;
   },
 
   async renderRelics(museumId, museum) {
@@ -289,7 +328,8 @@ const Museum = {
     el.innerHTML = relics
       .map(
         (r) => `
-      <div class="relic-card" data-id="${r.id}">
+      <div class="relic-card ${this._shareMode ? 'selectable' : ''} ${this._shareSelected.has(String(r.id)) ? 'selected' : ''}" data-id="${r.id}">
+        ${this._shareMode ? `<div class="rc-checkmark ${this._shareSelected.has(String(r.id)) ? 'checked' : ''}">${this._shareSelected.has(String(r.id)) ? '✓' : ''}</div>` : ''}
         ${r.image ? `<img class="rc-img" src="${r.image}" alt="${r.name || '文物'}">` : '<div class="rc-img" style="display:flex;align-items:center;justify-content:center;background:var(--paper-deep);font-size:36px;">🏺</div>'}
         <div class="rc-body">
           <div class="rc-name">
@@ -297,10 +337,10 @@ const Museum = {
           </div>
           ${r.dynasty ? `<div class="rc-meta">年代：${r.dynasty}</div>` : ''}
           ${r.desc ? `<div class="rc-desc">${r.desc}</div>` : ''}
-          <div style="display:flex;gap:6px;margin-top:10px;">
+          ${this._shareMode ? '' : `<div style="display:flex;gap:6px;margin-top:10px;">
             <button class="btn btn-ghost" data-act="edit" style="flex:1;font-size:12px;padding:7px;">✏️ 编辑</button>
             <button class="btn btn-ghost" data-act="del" style="flex:1;font-size:12px;padding:7px;color:var(--rust)">删除</button>
-          </div>
+          </div>`}
         </div>
       </div>`
       )
@@ -308,14 +348,41 @@ const Museum = {
 
     el.querySelectorAll('.relic-card').forEach((card) => {
       const rid = card.dataset.id;
-      card.querySelector('[data-act="edit"]').onclick = () => this.editRelic(rid, museum);
-      card.querySelector('[data-act="del"]').onclick = async () => {
-        if (await UI.confirm('删除这件文物记录？')) {
-          await db.remove(db.STORES.relic, rid);
-          this.renderRelics(museumId, museum);
-        }
-      };
+
+      if (this._shareMode) {
+        // 选择模式：点击切换选中
+        card.onclick = (e) => {
+          e.stopPropagation();
+          if (this._shareSelected.has(rid)) {
+            this._shareSelected.delete(rid);
+          } else {
+            this._shareSelected.add(rid);
+          }
+          this._updateShareCount();
+          // 局部更新这张卡片
+          card.classList.toggle('selected', this._shareSelected.has(rid));
+          const check = card.querySelector('.rc-checkmark');
+          if (check) {
+            check.classList.toggle('checked', this._shareSelected.has(rid));
+            check.textContent = this._shareSelected.has(rid) ? '✓' : '';
+          }
+        };
+      } else {
+        card.querySelector('[data-act="edit"]').onclick = () => this.editRelic(rid, museum);
+        card.querySelector('[data-act="del"]').onclick = async () => {
+          if (await UI.confirm('删除这件文物记录？')) {
+            await db.remove(db.STORES.relic, rid);
+            this.renderRelics(museumId, museum);
+          }
+        };
+      }
     });
+
+    // 绑定选择栏按钮
+    const cancelBtn = document.getElementById('shareSelectCancel');
+    const genBtn = document.getElementById('shareSelectGen');
+    if (cancelBtn) cancelBtn.onclick = () => this._exitShareMode(museumId, museum);
+    if (genBtn) genBtn.onclick = () => this._generateShareImages(museumId, museum);
   },
 
   /* 文物预览（时间轴点击） */
@@ -677,6 +744,466 @@ const Museum = {
         this.renderRelics(relic.museumId, museum);
       };
     });
+  },
+
+  /* ============================================
+     生成文物分享图（3:4）
+     ============================================ */
+
+  async _generateShareImages(museumId, museum) {
+    if (this._shareSelected.size === 0) {
+      UI.toast('请选择至少 1 件文物');
+      return;
+    }
+
+    const allRelics = await db.query(db.STORES.relic, (r) => r.museumId === museumId);
+    const selectedRelics = allRelics.filter((r) => this._shareSelected.has(String(r.id)));
+
+    UI.toast('正在生成分享图...');
+
+    // 逐个生成
+    const images = [];
+    for (const relic of selectedRelics) {
+      try {
+        const dataUrl = await this._renderShareCanvas(relic, museum);
+        images.push({ relic, dataUrl });
+      } catch (e) {
+        console.warn('生成失败:', relic.name, e.message);
+      }
+    }
+
+    if (images.length === 0) {
+      UI.toast('生成失败，请重试');
+      return;
+    }
+
+    // 退出选择模式
+    this._exitShareMode(museumId, museum);
+
+    // 显示预览
+    this._showSharePreview(images);
+  },
+
+  /* 在 Canvas 上绘制 3:4 分享图 — 样式A：深色古典竖排摄影型 */
+  _renderShareCanvas(relic, museum) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const W = 900;
+        const H = 1200;
+        const canvas = document.createElement('canvas');
+        canvas.width = W;
+        canvas.height = H;
+        const ctx = canvas.getContext('2d');
+
+        // ━━━ 配色 ━━━
+        const GOLD = '#c9a84c';
+        const GOLD_SOFT = 'rgba(201,168,76,0.6)';
+        const GOLD_FAINT = 'rgba(201,168,76,0.35)';
+        const GREEN_DEEP = '#1a2f1a';
+        const GREEN_MID = '#243a22';
+
+        // ━━━ 背景：深墨绿渐变 ━━━
+        const bgGrad = ctx.createLinearGradient(0, 0, W, H);
+        bgGrad.addColorStop(0, '#1a2f1a');
+        bgGrad.addColorStop(0.5, '#1f3320');
+        bgGrad.addColorStop(1, '#2a2f1a');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, W, H);
+
+        // ━━━ 背景纹理：隐约斑驳 ━━━
+        ctx.save();
+        ctx.globalAlpha = 0.03;
+        for (let i = 0; i < 80; i++) {
+          const x = Math.random() * W;
+          const y = Math.random() * H;
+          const r = Math.random() * 60 + 20;
+          const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+          g.addColorStop(0, '#c9a84c');
+          g.addColorStop(1, 'transparent');
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+
+        // ━━━ 底部暖色光晕 ━━━
+        const glowGrad = ctx.createRadialGradient(W * 0.7, H * 0.65, 0, W * 0.7, H * 0.65, 400);
+        glowGrad.addColorStop(0, 'rgba(201,168,76,0.12)');
+        glowGrad.addColorStop(1, 'rgba(201,168,76,0)');
+        ctx.fillStyle = glowGrad;
+        ctx.fillRect(0, 0, W, H);
+
+        // ━━━ 顶部品牌 ━━━
+        ctx.fillStyle = GOLD;
+        this._roundRect(ctx, 50, 50, 36, 36, 6);
+        ctx.fill();
+        ctx.fillStyle = GREEN_DEEP;
+        ctx.font = 'bold 20px "Noto Serif SC", serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('雨', 68, 69);
+
+        ctx.fillStyle = GOLD_SOFT;
+        ctx.font = '13px "Noto Serif SC", serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('今日有雨', 96, 68);
+
+        // ━━━ 文物照片区域（右侧，渐变融入背景）━━━
+        const photoX = W * 0.28;
+        const photoY = 120;
+        const photoW = W - photoX - 30;
+        const photoH = H * 0.55;
+
+        if (relic.image) {
+          const img = await this._loadImage(relic.image);
+          const scale = Math.max(photoW / img.width, photoH / img.height);
+          const drawW = img.width * scale;
+          const drawH = img.height * scale;
+          const dx = photoX + (photoW - drawW) / 2;
+          const dy = photoY + (photoH - drawH) / 2;
+
+          ctx.save();
+          ctx.globalAlpha = 0.88;
+          ctx.drawImage(img, dx, dy, drawW, drawH);
+          ctx.restore();
+
+          // 左侧渐变遮罩：融入背景
+          const leftMask = ctx.createLinearGradient(photoX, 0, photoX + 200, 0);
+          leftMask.addColorStop(0, GREEN_DEEP);
+          leftMask.addColorStop(0.3, 'rgba(26,47,26,0.85)');
+          leftMask.addColorStop(1, 'rgba(26,47,26,0)');
+          ctx.fillStyle = leftMask;
+          ctx.fillRect(photoX - 10, photoY - 10, 210, photoH + 20);
+
+          // 底部渐变遮罩
+          const bottomMask = ctx.createLinearGradient(0, photoY + photoH - 150, 0, photoY + photoH + 20);
+          bottomMask.addColorStop(0, 'rgba(26,47,26,0)');
+          bottomMask.addColorStop(1, 'rgba(26,47,26,0.9)');
+          ctx.fillStyle = bottomMask;
+          ctx.fillRect(photoX - 10, photoY + photoH - 150, photoW + 20, 170);
+
+          // 顶部渐变遮罩
+          const topMask = ctx.createLinearGradient(0, photoY - 10, 0, photoY + 80);
+          topMask.addColorStop(0, 'rgba(26,47,26,0.6)');
+          topMask.addColorStop(1, 'rgba(26,47,26,0)');
+          ctx.fillStyle = topMask;
+          ctx.fillRect(photoX - 10, photoY - 10, photoW + 20, 90);
+        } else {
+          ctx.fillStyle = GOLD_FAINT;
+          ctx.font = '80px serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('🏺', W * 0.65, photoY + photoH / 2);
+        }
+
+        // ━━━ 竖排文物名 + 拼音（左侧）━━━
+        const vCenterX = 95;
+        const vStartY = 220;
+        const name = relic.name || '未命名文物';
+
+        ctx.fillStyle = GOLD;
+        ctx.font = 'bold 34px "Noto Serif SC", serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+
+        // 逐字竖排
+        const chars = name.split('');
+        let vY = vStartY;
+        for (const char of chars) {
+          ctx.fillText(char, vCenterX, vY);
+          vY += 42;
+        }
+
+        // 拼音（竖排小字，右侧）
+        const pinyin = this._toPinyin(name);
+        if (pinyin) {
+          ctx.fillStyle = GOLD_FAINT;
+          ctx.font = '11px serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          let pY = vStartY + 4;
+          for (const word of pinyin.split(' ')) {
+            ctx.fillText(word, vCenterX + 28, pY);
+            pY += 16;
+          }
+        }
+
+        // ━━━ 大号朝代字（左下角视觉锚点）━━━
+        if (relic.dynasty) {
+          // 提取朝代简称（取第一个字或关键词）
+          let dynastyShort = relic.dynasty;
+          // 处理"明永乐"->"明"，"西汉"->"汉"
+          const dynastyMap = {
+            '新石器': '石', '夏': '夏', '商': '商', '西周': '周', '东周': '周',
+            '春秋': '秋', '战国': '战', '秦': '秦', '西汉': '汉', '东汉': '汉',
+            '三国': '三', '魏晋': '晋', '南北朝': '朝', '隋': '隋', '唐': '唐',
+            '五代': '五', '北宋': '宋', '南宋': '宋', '辽': '辽', '金': '金',
+            '元': '元', '明': '明', '清': '清', '民国': '民'
+          };
+          for (const key in dynastyMap) {
+            if (relic.dynasty.startsWith(key)) {
+              dynastyShort = dynastyMap[key];
+              break;
+            }
+          }
+
+          ctx.fillStyle = 'rgba(201,168,76,0.82)';
+          ctx.font = 'bold 72px "Noto Serif SC", serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(dynastyShort, vCenterX, H * 0.52);
+
+          // 朝代全称小字
+          ctx.fillStyle = GOLD_FAINT;
+          ctx.font = '12px "Noto Serif SC", serif';
+          ctx.fillText(relic.dynasty, vCenterX, H * 0.52 + 50);
+        }
+
+        // ━━━ 文物简介（底部横排）━━━
+        const descY = H * 0.72;
+        if (relic.desc) {
+          ctx.fillStyle = 'rgba(201,168,76,0.68)';
+          ctx.font = '15px "Noto Serif SC", serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          const descLines = this._wrapText(ctx, relic.desc, W - 120, 5);
+          descLines.forEach((line, i) => {
+            ctx.fillText(line, 60, descY + i * 26);
+          });
+        }
+
+        // ━━━ 底部分隔线 ━━━
+        ctx.strokeStyle = 'rgba(201,168,76,0.25)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(50, H - 90);
+        ctx.lineTo(W - 50, H - 90);
+        ctx.stroke();
+
+        // ━━━ 底部信息栏 ━━━
+        const footerY = H - 60;
+        ctx.textBaseline = 'middle';
+
+        // 左：博物馆名+城市
+        ctx.fillStyle = GOLD_SOFT;
+        ctx.font = '13px "Noto Serif SC", serif';
+        ctx.textAlign = 'left';
+        const museumInfo = `${museum.name || '博物馆'}${museum.location ? ' · ' + museum.location : ''}`;
+        ctx.fillText(museumInfo, 50, footerY);
+
+        // 左下：参观日期
+        ctx.fillStyle = GOLD_FAINT;
+        ctx.font = '11px "Noto Serif SC", serif';
+        const dateStr = museum.visitDate || UI.formatDate(Date.now());
+        ctx.fillText(dateStr, 50, footerY + 22);
+
+        // 右：品牌印章
+        ctx.fillStyle = GOLD;
+        this._roundRect(ctx, W - 82, footerY - 10, 24, 24, 4);
+        ctx.fill();
+        ctx.fillStyle = GREEN_DEEP;
+        ctx.font = 'bold 13px "Noto Serif SC", serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('雨', W - 70, footerY + 2);
+
+        ctx.fillStyle = GOLD_FAINT;
+        ctx.font = '11px "Noto Serif SC", serif';
+        ctx.textAlign = 'right';
+        ctx.fillText('今日有雨 · 文物留痕', W - 92, footerY + 2);
+
+        resolve(canvas.toDataURL('image/jpeg', 0.92));
+      } catch (e) {
+        reject(e);
+      }
+    });
+  },
+
+  /* 简易拼音转换（常用文物字） */
+  _toPinyin(text) {
+    const map = {
+      '青': 'qīng', '花': 'huā', '梅': 'méi', '瓶': 'píng', '瓷': 'cí',
+      '鼎': 'dǐng', '尊': 'zūn', '壶': 'hú', '碗': 'wǎn', '盘': 'pán',
+      '镜': 'jìng', '剑': 'jiàn', '玉': 'yù', '璧': 'bì', '环': 'huán',
+      '佩': 'pèi', '冠': 'guān', '簪': 'zān', '钗': 'chāi', '镯': 'zhuó',
+      '秘': 'mì', '色': 'sè', '莲': 'lián', '缠': 'chán', '枝': 'zhī',
+      '纹': 'wén', '釉': 'yòu', '红': 'hóng', '蓝': 'lán', '白': 'bái',
+      '黑': 'hēi', '绿': 'lǜ', '黄': 'huáng', '紫': 'zǐ', '金': 'jīn',
+      '银': 'yín', '铜': 'tóng', '铁': 'tiě', '石': 'shí', '木': 'mù',
+      '漆': 'qī', '丝': 'sī', '绸': 'chóu', '缎': 'duàn', '锦': 'jǐn',
+      '书': 'shū', '画': 'huà', '卷': 'juǎn', '册': 'cè', '帖': 'tiè',
+      '砚': 'yàn', '墨': 'mò', '笔': 'bǐ', '纸': 'zhǐ', '扇': 'shàn',
+      '冠': 'guān', '袍': 'páo', '裳': 'cháng', '履': 'lǚ', '靴': 'xuē',
+      '簋': 'guǐ', '罍': 'léi', '觚': 'gū', '爵': 'jué', '斝': 'jiǎ',
+      '甗': 'yǎn', '鬲': 'lì', '豆': 'dòu', '铺': 'pù', '鉴': 'jiàn',
+      '编': 'biān', '钟': 'zhōng', '磬': 'qìng', '鼓': 'gǔ', '琴': 'qín',
+      '瑟': 'sè', '笙': 'shēng', '埙': 'xūn', '篪': 'chí',
+      '佛': 'fó', '塔': 'tǎ', '经': 'jīng', '像': 'xiàng',
+      '俑': 'yǒng', '马': 'mǎ', '牛': 'niú', '羊': 'yáng', '虎': 'hǔ',
+      '龙': 'lóng', '凤': 'fèng', '雀': 'què', '龟': 'guī', '蛇': 'shé',
+      '鱼': 'yú', '鸟': 'niǎo', '兽': 'shòu', '麟': 'lín', '鹤': 'hè',
+      '彩': 'cǎi', '绘': 'huì', '雕': 'diāo', '刻': 'kè', '塑': 'sù',
+      '鎏': 'liú', '嵌': 'qiàn', '镶': 'xiāng', '错': 'cuò',
+      '未': 'wèi', '命': 'mìng', '名': 'míng', '文': 'wén', '物': 'wù'
+    };
+    const result = [];
+    for (const char of text) {
+      if (map[char]) {
+        result.push(map[char]);
+      }
+    }
+    return result.join(' ');
+  },
+
+  /* 加载图片（支持 dataURL 和普通 URL） */
+  _loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  },
+
+  /* 圆角矩形路径 */
+  _roundRect(ctx, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  },
+
+  /* 文本换行 */
+  _wrapText(ctx, text, maxWidth, maxLines = 99) {
+    const lines = [];
+    let current = '';
+
+    for (const char of text) {
+      const test = current + char;
+      if (ctx.measureText(test).width > maxWidth && current) {
+        lines.push(current);
+        current = char;
+        if (lines.length >= maxLines - 1) break;
+      } else {
+        current = test;
+      }
+    }
+
+    if (current) {
+      // 如果已经达到最大行数，最后一行加省略号
+      if (lines.length >= maxLines - 1 && ctx.measureText(current).width > maxWidth) {
+        while (ctx.measureText(current + '...').width > maxWidth && current.length > 0) {
+          current = current.slice(0, -1);
+        }
+        current += '...';
+      }
+      lines.push(current);
+    }
+
+    return lines.slice(0, maxLines);
+  },
+
+  /* 分享图预览界面 */
+  _showSharePreview(images) {
+    let currentIdx = 0;
+
+    const renderPreview = (root) => {
+      const { relic, dataUrl } = images[currentIdx];
+      root.querySelector('#spImage').src = dataUrl;
+      root.querySelector('#spName').textContent = relic.name || '未命名文物';
+      root.querySelector('#spCounter').textContent = `${currentIdx + 1} / ${images.length}`;
+      root.querySelector('#spPrev').style.opacity = currentIdx > 0 ? '1' : '0.3';
+      root.querySelector('#spPrev').style.pointerEvents = currentIdx > 0 ? 'auto' : 'none';
+      root.querySelector('#spNext').style.opacity = currentIdx < images.length - 1 ? '1' : '0.3';
+      root.querySelector('#spNext').style.pointerEvents = currentIdx < images.length - 1 ? 'auto' : 'none';
+    };
+
+    const body = `
+      <div style="text-align:center;margin-bottom:12px;">
+        <span id="spName" style="font-family:var(--font-display);font-size:16px;color:var(--ink);"></span>
+        <span id="spCounter" style="font-size:12px;color:var(--ink-mute);margin-left:8px;"></span>
+      </div>
+      <div style="position:relative;margin-bottom:14px;">
+        <img id="spImage" style="width:100%;border-radius:8px;border:1px solid var(--ink-line);aspect-ratio:3/4;object-fit:cover;" alt="分享图预览">
+        <button id="spPrev" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.85);border:1px solid var(--ink-line);font-size:16px;cursor:pointer;">‹</button>
+        <button id="spNext" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.85);border:1px solid var(--ink-line);font-size:16px;cursor:pointer;">›</button>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" id="spClose" style="flex:1;">关闭</button>
+        <button class="btn btn-ghost" id="spSaveAll" style="flex:1;">📥 全部保存</button>
+        <button class="btn btn-primary" id="spSave" style="flex:1;">保存当前</button>
+      </div>
+    `;
+
+    UI.showSheet('🖼 分享图预览', body, (root) => {
+      renderPreview(root);
+
+      root.querySelector('#spPrev').onclick = () => {
+        if (currentIdx > 0) { currentIdx--; renderPreview(root); }
+      };
+      root.querySelector('#spNext').onclick = () => {
+        if (currentIdx < images.length - 1) { currentIdx++; renderPreview(root); }
+      };
+
+      root.querySelector('#spClose').onclick = () => UI.hideSheet();
+
+      // 保存当前
+      root.querySelector('#spSave').onclick = async () => {
+        const { relic, dataUrl } = images[currentIdx];
+        await this._saveShareImage(dataUrl, relic.name || '文物');
+      };
+
+      // 全部保存
+      root.querySelector('#spSaveAll').onclick = async () => {
+        UI.toast(`正在保存 ${images.length} 张...`);
+        for (let i = 0; i < images.length; i++) {
+          const { relic, dataUrl } = images[i];
+          await this._saveShareImage(dataUrl, relic.name || '文物', true);
+          if (i < images.length - 1) await new Promise(r => setTimeout(r, 600));
+        }
+        UI.toast(`已保存 ${images.length} 张分享图`);
+      };
+    });
+  },
+
+  /* 保存分享图到相册/下载 */
+  async _saveShareImage(dataUrl, name, silent = false) {
+    try {
+      const resp = await fetch(dataUrl);
+      const blob = await resp.blob();
+      const fileName = `${name}_${Date.now()}.jpg`;
+
+      // 优先使用 Web Share API
+      if (navigator.share && navigator.canShare) {
+        const file = new File([blob], fileName, { type: 'image/jpeg' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: name });
+          return;
+        }
+      }
+
+      // 降级为下载
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      if (!silent) UI.toast('已下载');
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        console.warn('保存失败:', e);
+        if (!silent) UI.toast('保存失败，请重试');
+      }
+    }
   }
 };
 

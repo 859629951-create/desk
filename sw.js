@@ -1,5 +1,5 @@
-// 今日有雨 Service Worker v5 - 健壮版 + Share Target + 强制更新
-const CACHE_NAME = 'desk-v40';
+// 今日有雨 Service Worker v6 - 健壮版 + Share Target + 强制更新
+const CACHE_NAME = 'desk-v49';
 
 // 核心资源列表
 const CORE_ASSETS = [
@@ -25,6 +25,7 @@ const CORE_ASSETS = [
   './modules/work.js',
   './modules/museum.js',
   './modules/pet.js',
+  './modules/kb-skill.js',
   './modules/knowledge.js',
   './modules/id-docs.js',
   './modules/settings.js',
@@ -62,10 +63,17 @@ self.addEventListener('install', (event) => {
       } catch (e) {}
       // 2. 逐个缓存其他资源
       await cacheIndividually(cache, CORE_ASSETS.filter(u => u !== './' && u !== './index.html'));
-      // 3. 立即激活
+      // 3. 立即激活（跳过等待）
       self.skipWaiting();
     })()
   );
+});
+
+// 接收页面消息，支持手动触发 skipWaiting
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('activate', (event) => {
@@ -76,10 +84,13 @@ self.addEventListener('activate', (event) => {
       await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
       // 立即接管所有客户端
       await self.clients.claim();
-      // 通知所有客户端强制刷新
-      const clients = await self.clients.matchAll({ type: 'window' });
+      // 通知所有客户端强制刷新（双重保险：navigate + message）
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       clients.forEach(client => {
-        client.navigate(client.url);
+        // 方式1：直接导航
+        client.navigate(client.url).catch(() => {});
+        // 方式2：发消息让页面自己刷新（navigate 在某些浏览器不可用）
+        client.postMessage({ type: 'FORCE_RELOAD' });
       });
     })()
   );
