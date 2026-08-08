@@ -1,5 +1,5 @@
 // 今日有雨 Service Worker v6 - 健壮版 + Share Target + 强制更新
-const CACHE_NAME = 'desk-v50';
+const CACHE_NAME = 'desk-v51';
 
 // 核心资源列表
 const CORE_ASSETS = [

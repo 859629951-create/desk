@@ -860,9 +860,9 @@ const Museum = {
         // ━━━ 文物照片区域 ━━━
         // 照片占据右侧约 62% 宽度，从顶部线下方到底部分隔线上方
         const photoX = W * 0.35;
-        const photoY = 120;
+        const photoY = 112;
         const photoW = W - photoX - PAD + 10;
-        const photoH = H * 0.52;
+        const photoH = H * 0.48;
 
         if (relic.image) {
           const img = await this._loadImage(relic.image);
@@ -921,11 +921,11 @@ const Museum = {
         }
 
         // ━━━ 竖排文物名（左侧）━━━
-        const vCenterX = 80;
-        const nameFontSize = nameChars.length > 8 ? 30 : 36;
-        const nameLineH = nameFontSize + 10;
-        const vStartY = 140;
-        const vMaxH = photoY + photoH - vStartY - 20;
+        const vCenterX = 82;
+        const nameFontSize = nameChars.length > 8 ? 36 : 46;
+        const nameLineH = nameFontSize + 14;
+        const vStartY = 132;
+        const vMaxH = photoY + photoH - vStartY - 16;
 
         ctx.fillStyle = GOLD_BRIGHT;
         ctx.font = `bold ${nameFontSize}px "Noto Serif SC", serif`;
@@ -934,10 +934,10 @@ const Museum = {
 
         // 如果名字太长，缩小字号
         let actualFontSize = nameFontSize;
-        while (nameChars.length * (actualFontSize + 10) > vMaxH && actualFontSize > 22) {
+        while (nameChars.length * (actualFontSize + 14) > vMaxH && actualFontSize > 26) {
           actualFontSize -= 2;
         }
-        const actualLineH = actualFontSize + 10;
+        const actualLineH = actualFontSize + 14;
         ctx.font = `bold ${actualFontSize}px "Noto Serif SC", serif`;
 
         let vY = vStartY;
@@ -950,18 +950,18 @@ const Museum = {
         const pinyin = this._toPinyin(name);
         if (pinyin) {
           ctx.fillStyle = GOLD_FAINT;
-          ctx.font = '10px serif';
+          ctx.font = '12px serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'top';
           let pY = vStartY + 2;
           for (const word of pinyin.split(' ')) {
-            ctx.fillText(word, vCenterX + actualFontSize + 6, pY);
-            pY += 14;
+            ctx.fillText(word, vCenterX + actualFontSize + 8, pY);
+            pY += 16;
           }
         }
 
         // ━━━ 朝代标签（照片下方，横排小标签）━━━
-        const dynastyY = photoY + photoH + 24;
+        const dynastyY = photoY + photoH + 20;
         if (relic.dynasty) {
           // 朝代简称大字 + 全称
           let dynastyShort = relic.dynasty;
@@ -991,7 +991,7 @@ const Museum = {
 
           // 朝代标签
           ctx.fillStyle = GOLD;
-          ctx.font = 'bold 15px "Noto Serif SC", serif';
+          ctx.font = 'bold 18px "Noto Serif SC", serif';
           ctx.textAlign = 'left';
           ctx.textBaseline = 'middle';
           ctx.fillText(relic.dynasty, PAD, dynastyY);
@@ -1001,23 +1001,23 @@ const Museum = {
           ctx.strokeStyle = GOLD_FAINT;
           ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.moveTo(PAD + dynastyW + 12, dynastyY - 8);
-          ctx.lineTo(PAD + dynastyW + 12, dynastyY + 8);
+          ctx.moveTo(PAD + dynastyW + 14, dynastyY - 10);
+          ctx.lineTo(PAD + dynastyW + 14, dynastyY + 10);
           ctx.stroke();
         }
 
         // ━━━ 文物简介（底部，高对比度）━━━
-        const descY = dynastyY + 28;
+        const descY = dynastyY + 26;
         if (relic.desc) {
           ctx.fillStyle = TEXT_DESC;
-          ctx.font = '14px "Noto Serif SC", serif';
+          ctx.font = '18px "Noto Serif SC", serif';
           ctx.textAlign = 'left';
           ctx.textBaseline = 'top';
           ctx.shadowColor = 'rgba(0,0,0,0.5)';
           ctx.shadowBlur = 2;
           const descLines = this._wrapText(ctx, relic.desc, W - PAD * 2, 4);
           descLines.forEach((line, i) => {
-            ctx.fillText(line, PAD, descY + i * 24);
+            ctx.fillText(line, PAD, descY + i * 30);
           });
           ctx.shadowColor = 'transparent';
           ctx.shadowBlur = 0;
