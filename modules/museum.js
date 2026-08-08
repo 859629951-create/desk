@@ -784,7 +784,7 @@ const Museum = {
     this._showSharePreview(images);
   },
 
-  /* 在 Canvas 上绘制 3:4 分享图 — 样式A：深色古典竖排摄影型 */
+ /* 在 Canvas 上绘制 3:4 分享图 — 样式A：深色古典竖排摄影型 */
   _renderShareCanvas(relic, museum) {
     return new Promise(async (resolve, reject) => {
       try {
@@ -796,29 +796,31 @@ const Museum = {
         const ctx = canvas.getContext('2d');
 
         // ━━━ 配色 ━━━
-        const GOLD = '#c9a84c';
-        const GOLD_SOFT = 'rgba(201,168,76,0.6)';
-        const GOLD_FAINT = 'rgba(201,168,76,0.35)';
-        const GREEN_DEEP = '#1a2f1a';
-        const GREEN_MID = '#243a22';
+        const GOLD = '#d4b25a';
+        const GOLD_BRIGHT = '#e8cc7a';
+        const GOLD_SOFT = 'rgba(212,178,90,0.55)';
+        const GOLD_FAINT = 'rgba(212,178,90,0.3)';
+        const GREEN_DEEP = '#16291a';
+        const TEXT_LIGHT = '#e8dcc0';
+        const TEXT_DESC = '#c8b888';
 
         // ━━━ 背景：深墨绿渐变 ━━━
-        const bgGrad = ctx.createLinearGradient(0, 0, W, H);
-        bgGrad.addColorStop(0, '#1a2f1a');
-        bgGrad.addColorStop(0.5, '#1f3320');
-        bgGrad.addColorStop(1, '#2a2f1a');
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+        bgGrad.addColorStop(0, '#0f1f12');
+        bgGrad.addColorStop(0.4, '#1a2f1a');
+        bgGrad.addColorStop(1, '#0d1a0f');
         ctx.fillStyle = bgGrad;
         ctx.fillRect(0, 0, W, H);
 
         // ━━━ 背景纹理：隐约斑驳 ━━━
         ctx.save();
-        ctx.globalAlpha = 0.03;
-        for (let i = 0; i < 80; i++) {
+        ctx.globalAlpha = 0.025;
+        for (let i = 0; i < 60; i++) {
           const x = Math.random() * W;
           const y = Math.random() * H;
-          const r = Math.random() * 60 + 20;
+          const r = Math.random() * 50 + 20;
           const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-          g.addColorStop(0, '#c9a84c');
+          g.addColorStop(0, GOLD);
           g.addColorStop(1, 'transparent');
           ctx.fillStyle = g;
           ctx.beginPath();
@@ -827,114 +829,142 @@ const Museum = {
         }
         ctx.restore();
 
-        // ━━━ 底部暖色光晕 ━━━
-        const glowGrad = ctx.createRadialGradient(W * 0.7, H * 0.65, 0, W * 0.7, H * 0.65, 400);
-        glowGrad.addColorStop(0, 'rgba(201,168,76,0.12)');
-        glowGrad.addColorStop(1, 'rgba(201,168,76,0)');
-        ctx.fillStyle = glowGrad;
-        ctx.fillRect(0, 0, W, H);
+        // ━━━ 布局参数 ━━━
+        const PAD = 56;
+        const name = relic.name || '未命名文物';
+        const nameChars = name.split('');
 
-        // ━━━ 顶部品牌 ━━━
+        // ━━━ 顶部品牌栏 ━━━
         ctx.fillStyle = GOLD;
-        this._roundRect(ctx, 50, 50, 36, 36, 6);
+        this._roundRect(ctx, PAD, 44, 32, 32, 5);
         ctx.fill();
         ctx.fillStyle = GREEN_DEEP;
-        ctx.font = 'bold 20px "Noto Serif SC", serif';
+        ctx.font = 'bold 18px "Noto Serif SC", serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('雨', 68, 69);
+        ctx.fillText('雨', PAD + 16, 61);
 
         ctx.fillStyle = GOLD_SOFT;
-        ctx.font = '13px "Noto Serif SC", serif';
+        ctx.font = '12px "Noto Serif SC", serif';
         ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('今日有雨', 96, 68);
+        ctx.fillText('今日有雨', PAD + 42, 60);
 
-        // ━━━ 文物照片区域（右侧，渐变融入背景）━━━
-        const photoX = W * 0.28;
+        // 顶部细线
+        ctx.strokeStyle = GOLD_FAINT;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(PAD, 100);
+        ctx.lineTo(W - PAD, 100);
+        ctx.stroke();
+
+        // ━━━ 文物照片区域 ━━━
+        // 照片占据右侧约 62% 宽度，从顶部线下方到底部分隔线上方
+        const photoX = W * 0.35;
         const photoY = 120;
-        const photoW = W - photoX - 30;
-        const photoH = H * 0.55;
+        const photoW = W - photoX - PAD + 10;
+        const photoH = H * 0.52;
 
         if (relic.image) {
           const img = await this._loadImage(relic.image);
-          const scale = Math.max(photoW / img.width, photoH / img.height);
-          const drawW = img.width * scale;
-          const drawH = img.height * scale;
+
+          // 裁切图片：去掉上下 15% 的边缘（去除展柜台面等杂物）
+          const cropTop = 0.12;
+          const cropBottom = 0.12;
+          const srcX = 0;
+          const srcY = img.height * cropTop;
+          const srcW = img.width;
+          const srcH = img.height * (1 - cropTop - cropBottom);
+
+          // cover 方式缩放
+          const scale = Math.max(photoW / srcW, photoH / srcH);
+          const drawW = srcW * scale;
+          const drawH = srcH * scale;
           const dx = photoX + (photoW - drawW) / 2;
           const dy = photoY + (photoH - drawH) / 2;
 
+          // 绘制照片
           ctx.save();
-          ctx.globalAlpha = 0.88;
-          ctx.drawImage(img, dx, dy, drawW, drawH);
+          ctx.beginPath();
+          ctx.rect(photoX, photoY, photoW, photoH);
+          ctx.clip();
+          ctx.globalAlpha = 0.92;
+          ctx.drawImage(img, srcX, srcY, srcW, srcH, dx, dy, drawW, drawH);
           ctx.restore();
 
-          // 左侧渐变遮罩：融入背景
-          const leftMask = ctx.createLinearGradient(photoX, 0, photoX + 200, 0);
+          // 左侧渐变遮罩：照片融入背景
+          const leftMask = ctx.createLinearGradient(photoX - 20, 0, photoX + 120, 0);
           leftMask.addColorStop(0, GREEN_DEEP);
-          leftMask.addColorStop(0.3, 'rgba(26,47,26,0.85)');
-          leftMask.addColorStop(1, 'rgba(26,47,26,0)');
+          leftMask.addColorStop(0.5, 'rgba(22,41,26,0.7)');
+          leftMask.addColorStop(1, 'rgba(22,41,26,0)');
           ctx.fillStyle = leftMask;
-          ctx.fillRect(photoX - 10, photoY - 10, 210, photoH + 20);
+          ctx.fillRect(photoX - 20, photoY, 140, photoH);
 
           // 底部渐变遮罩
-          const bottomMask = ctx.createLinearGradient(0, photoY + photoH - 150, 0, photoY + photoH + 20);
-          bottomMask.addColorStop(0, 'rgba(26,47,26,0)');
-          bottomMask.addColorStop(1, 'rgba(26,47,26,0.9)');
+          const bottomMask = ctx.createLinearGradient(0, photoY + photoH - 100, 0, photoY + photoH);
+          bottomMask.addColorStop(0, 'rgba(15,31,18,0)');
+          bottomMask.addColorStop(1, 'rgba(15,31,18,0.85)');
           ctx.fillStyle = bottomMask;
-          ctx.fillRect(photoX - 10, photoY + photoH - 150, photoW + 20, 170);
+          ctx.fillRect(photoX, photoY + photoH - 100, photoW, 100);
 
-          // 顶部渐变遮罩
-          const topMask = ctx.createLinearGradient(0, photoY - 10, 0, photoY + 80);
-          topMask.addColorStop(0, 'rgba(26,47,26,0.6)');
-          topMask.addColorStop(1, 'rgba(26,47,26,0)');
-          ctx.fillStyle = topMask;
-          ctx.fillRect(photoX - 10, photoY - 10, photoW + 20, 90);
+          // 右侧渐变遮罩
+          const rightMask = ctx.createLinearGradient(photoX + photoW - 60, 0, photoX + photoW, 0);
+          rightMask.addColorStop(0, 'rgba(15,31,18,0)');
+          rightMask.addColorStop(1, 'rgba(15,31,18,0.6)');
+          ctx.fillStyle = rightMask;
+          ctx.fillRect(photoX + photoW - 60, photoY, 60, photoH);
         } else {
           ctx.fillStyle = GOLD_FAINT;
-          ctx.font = '80px serif';
+          ctx.font = '60px serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText('🏺', W * 0.65, photoY + photoH / 2);
+          ctx.fillText('🏺', photoX + photoW / 2, photoY + photoH / 2);
         }
 
-        // ━━━ 竖排文物名 + 拼音（左侧）━━━
-        const vCenterX = 95;
-        const vStartY = 220;
-        const name = relic.name || '未命名文物';
+        // ━━━ 竖排文物名（左侧）━━━
+        const vCenterX = 80;
+        const nameFontSize = nameChars.length > 8 ? 30 : 36;
+        const nameLineH = nameFontSize + 10;
+        const vStartY = 140;
+        const vMaxH = photoY + photoH - vStartY - 20;
 
-        ctx.fillStyle = GOLD;
-        ctx.font = 'bold 34px "Noto Serif SC", serif';
+        ctx.fillStyle = GOLD_BRIGHT;
+        ctx.font = `bold ${nameFontSize}px "Noto Serif SC", serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
 
-        // 逐字竖排
-        const chars = name.split('');
+        // 如果名字太长，缩小字号
+        let actualFontSize = nameFontSize;
+        while (nameChars.length * (actualFontSize + 10) > vMaxH && actualFontSize > 22) {
+          actualFontSize -= 2;
+        }
+        const actualLineH = actualFontSize + 10;
+        ctx.font = `bold ${actualFontSize}px "Noto Serif SC", serif`;
+
         let vY = vStartY;
-        for (const char of chars) {
+        for (const char of nameChars) {
           ctx.fillText(char, vCenterX, vY);
-          vY += 42;
+          vY += actualLineH;
         }
 
-        // 拼音（竖排小字，右侧）
+        // 拼音（竖排小字，文物名右侧）
         const pinyin = this._toPinyin(name);
         if (pinyin) {
           ctx.fillStyle = GOLD_FAINT;
-          ctx.font = '11px serif';
+          ctx.font = '10px serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'top';
-          let pY = vStartY + 4;
+          let pY = vStartY + 2;
           for (const word of pinyin.split(' ')) {
-            ctx.fillText(word, vCenterX + 28, pY);
-            pY += 16;
+            ctx.fillText(word, vCenterX + actualFontSize + 6, pY);
+            pY += 14;
           }
         }
 
-        // ━━━ 大号朝代字（左下角视觉锚点）━━━
+        // ━━━ 朝代标签（照片下方，横排小标签）━━━
+        const dynastyY = photoY + photoH + 24;
         if (relic.dynasty) {
-          // 提取朝代简称（取第一个字或关键词）
+          // 朝代简称大字 + 全称
           let dynastyShort = relic.dynasty;
-          // 处理"明永乐"->"明"，"西汉"->"汉"
           const dynastyMap = {
             '新石器': '石', '夏': '夏', '商': '商', '西周': '周', '东周': '周',
             '春秋': '秋', '战国': '战', '秦': '秦', '西汉': '汉', '东汉': '汉',
@@ -949,69 +979,88 @@ const Museum = {
             }
           }
 
-          ctx.fillStyle = 'rgba(201,168,76,0.82)';
-          ctx.font = 'bold 72px "Noto Serif SC", serif';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(dynastyShort, vCenterX, H * 0.52);
+          // 大号朝代字（水印效果，左下角）
+          ctx.save();
+          ctx.globalAlpha = 0.1;
+          ctx.fillStyle = GOLD;
+          ctx.font = 'bold 120px "Noto Serif SC", serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(dynastyShort, PAD - 10, H * 0.68);
+          ctx.restore();
 
-          // 朝代全称小字
-          ctx.fillStyle = GOLD_FAINT;
-          ctx.font = '12px "Noto Serif SC", serif';
-          ctx.fillText(relic.dynasty, vCenterX, H * 0.52 + 50);
+          // 朝代标签
+          ctx.fillStyle = GOLD;
+          ctx.font = 'bold 15px "Noto Serif SC", serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(relic.dynasty, PAD, dynastyY);
+
+          // 标签后竖线
+          const dynastyW = ctx.measureText(relic.dynasty).width;
+          ctx.strokeStyle = GOLD_FAINT;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(PAD + dynastyW + 12, dynastyY - 8);
+          ctx.lineTo(PAD + dynastyW + 12, dynastyY + 8);
+          ctx.stroke();
         }
 
-        // ━━━ 文物简介（底部横排）━━━
-        const descY = H * 0.72;
+        // ━━━ 文物简介（底部，高对比度）━━━
+        const descY = dynastyY + 28;
         if (relic.desc) {
-          ctx.fillStyle = 'rgba(201,168,76,0.68)';
-          ctx.font = '15px "Noto Serif SC", serif';
+          ctx.fillStyle = TEXT_DESC;
+          ctx.font = '14px "Noto Serif SC", serif';
           ctx.textAlign = 'left';
           ctx.textBaseline = 'top';
-          const descLines = this._wrapText(ctx, relic.desc, W - 120, 5);
+          ctx.shadowColor = 'rgba(0,0,0,0.5)';
+          ctx.shadowBlur = 2;
+          const descLines = this._wrapText(ctx, relic.desc, W - PAD * 2, 4);
           descLines.forEach((line, i) => {
-            ctx.fillText(line, 60, descY + i * 26);
+            ctx.fillText(line, PAD, descY + i * 24);
           });
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
         }
 
         // ━━━ 底部分隔线 ━━━
-        ctx.strokeStyle = 'rgba(201,168,76,0.25)';
+        ctx.strokeStyle = GOLD_FAINT;
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(50, H - 90);
-        ctx.lineTo(W - 50, H - 90);
+        ctx.moveTo(PAD, H - 76);
+        ctx.lineTo(W - PAD, H - 76);
         ctx.stroke();
 
         // ━━━ 底部信息栏 ━━━
-        const footerY = H - 60;
+        const footerY = H - 48;
         ctx.textBaseline = 'middle';
 
-        // 左：博物馆名+城市
-        ctx.fillStyle = GOLD_SOFT;
+        // 左：博物馆名
+        ctx.fillStyle = TEXT_LIGHT;
         ctx.font = '13px "Noto Serif SC", serif';
         ctx.textAlign = 'left';
         const museumInfo = `${museum.name || '博物馆'}${museum.location ? ' · ' + museum.location : ''}`;
-        ctx.fillText(museumInfo, 50, footerY);
+        ctx.fillText(museumInfo, PAD, footerY);
 
         // 左下：参观日期
         ctx.fillStyle = GOLD_FAINT;
         ctx.font = '11px "Noto Serif SC", serif';
         const dateStr = museum.visitDate || UI.formatDate(Date.now());
-        ctx.fillText(dateStr, 50, footerY + 22);
+        ctx.fillText(dateStr, PAD, footerY + 20);
 
         // 右：品牌印章
         ctx.fillStyle = GOLD;
-        this._roundRect(ctx, W - 82, footerY - 10, 24, 24, 4);
+        this._roundRect(ctx, W - PAD - 22, footerY - 10, 20, 20, 3);
         ctx.fill();
         ctx.fillStyle = GREEN_DEEP;
-        ctx.font = 'bold 13px "Noto Serif SC", serif';
+        ctx.font = 'bold 12px "Noto Serif SC", serif';
         ctx.textAlign = 'center';
-        ctx.fillText('雨', W - 70, footerY + 2);
+        ctx.fillText('雨', W - PAD - 12, footerY);
 
         ctx.fillStyle = GOLD_FAINT;
         ctx.font = '11px "Noto Serif SC", serif';
         ctx.textAlign = 'right';
-        ctx.fillText('今日有雨 · 文物留痕', W - 92, footerY + 2);
+        ctx.fillText('今日有雨 · 文物留痕', W - PAD - 30, footerY);
 
         resolve(canvas.toDataURL('image/jpeg', 0.92));
       } catch (e) {
